@@ -1,4 +1,5 @@
 import type { PartRow } from "./types.ts";
+import { buildSearchText } from "./attrs.ts";
 
 /**
  * Actual attribute structure in jlcparts JSON:
@@ -115,5 +116,6 @@ export function parseComponent(
     part_type: partType,
     pcba_type: pcbaType,
     attributes: JSON.stringify(attrs),
+    search_text: buildSearchText(JSON.stringify(attrs)),
   };
 }

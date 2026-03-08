@@ -102,10 +102,10 @@ export function search(params: SearchParams): { results: PartSummary[]; total: n
 
   const runFts = (matchQuery: string, fetchLimit = limit): { rows: Record<string, unknown>[]; cnt: number } => {
     try {
-      // Field weights: lcsc=10, mpn=8, manufacturer=3, description=5, package=2, subcategory=4
+      // Field weights: lcsc=10, mpn=8, manufacturer=3, description=5, package=2, subcategory=4, search_text=3
       const rows = db.query<Record<string, unknown>, unknown[]>(`
         SELECT ${SELECT_COLS},
-          bm25(parts_fts, 10, 8, 3, 5, 2, 4) AS score
+          bm25(parts_fts, 10, 8, 3, 5, 2, 4, 3) AS score
         FROM parts_fts
         JOIN parts p ON p.rowid = parts_fts.rowid
         WHERE parts_fts MATCH ?

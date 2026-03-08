@@ -4,8 +4,8 @@ import type { PartRow, StockData } from "./types.ts";
 const INSERT_SQL = `
   INSERT OR REPLACE INTO parts
     (lcsc, mpn, manufacturer, category, subcategory, description,
-     datasheet, package, joints, stock, price_raw, img, url, part_type, pcba_type, attributes)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     datasheet, package, joints, stock, price_raw, img, url, part_type, pcba_type, attributes, search_text)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `;
 
 /** Drop FTS triggers for fast bulk insert. Call rebuildFts() afterward. */
@@ -18,18 +18,18 @@ export function dropFtsTriggers(db: Database): void {
 /** Re-create FTS triggers for incremental updates. */
 export function recreateFtsTriggers(db: Database): void {
   db.run(`CREATE TRIGGER IF NOT EXISTS parts_ai AFTER INSERT ON parts BEGIN
-    INSERT INTO parts_fts(rowid, lcsc, mpn, manufacturer, description, package, subcategory)
-    VALUES (new.rowid, new.lcsc, new.mpn, new.manufacturer, new.description, new.package, new.subcategory);
+    INSERT INTO parts_fts(rowid, lcsc, mpn, manufacturer, description, package, subcategory, search_text)
+    VALUES (new.rowid, new.lcsc, new.mpn, new.manufacturer, new.description, new.package, new.subcategory, new.search_text);
   END`);
   db.run(`CREATE TRIGGER IF NOT EXISTS parts_ad AFTER DELETE ON parts BEGIN
-    INSERT INTO parts_fts(parts_fts, rowid, lcsc, mpn, manufacturer, description, package, subcategory)
-    VALUES ('delete', old.rowid, old.lcsc, old.mpn, old.manufacturer, old.description, old.package, old.subcategory);
+    INSERT INTO parts_fts(parts_fts, rowid, lcsc, mpn, manufacturer, description, package, subcategory, search_text)
+    VALUES ('delete', old.rowid, old.lcsc, old.mpn, old.manufacturer, old.description, old.package, old.subcategory, old.search_text);
   END`);
   db.run(`CREATE TRIGGER IF NOT EXISTS parts_au AFTER UPDATE ON parts BEGIN
-    INSERT INTO parts_fts(parts_fts, rowid, lcsc, mpn, manufacturer, description, package, subcategory)
-    VALUES ('delete', old.rowid, old.lcsc, old.mpn, old.manufacturer, old.description, old.package, old.subcategory);
-    INSERT INTO parts_fts(rowid, lcsc, mpn, manufacturer, description, package, subcategory)
-    VALUES (new.rowid, new.lcsc, new.mpn, new.manufacturer, new.description, new.package, new.subcategory);
+    INSERT INTO parts_fts(parts_fts, rowid, lcsc, mpn, manufacturer, description, package, subcategory, search_text)
+    VALUES ('delete', old.rowid, old.lcsc, old.mpn, old.manufacturer, old.description, old.package, old.subcategory, old.search_text);
+    INSERT INTO parts_fts(rowid, lcsc, mpn, manufacturer, description, package, subcategory, search_text)
+    VALUES (new.rowid, new.lcsc, new.mpn, new.manufacturer, new.description, new.package, new.subcategory, new.search_text);
   END`);
 }
 
@@ -46,7 +46,7 @@ export function bulkInsertParts(db: Database, parts: PartRow[]): void {
         stmt.run(
           n(p.lcsc), n(p.mpn), n(p.manufacturer), n(p.category), n(p.subcategory),
           n(p.description), n(p.datasheet), n(p.package), n(p.joints), n(p.stock),
-          n(p.price_raw), n(p.img), n(p.url), n(p.part_type), n(p.pcba_type), n(p.attributes)
+          n(p.price_raw), n(p.img), n(p.url), n(p.part_type), n(p.pcba_type), n(p.attributes), n(p.search_text)
         );
       }
     })();

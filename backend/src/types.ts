@@ -15,6 +15,7 @@ export interface PartRow {
   part_type: string;
   pcba_type: string;
   attributes: string;
+  search_text: string;
 }
 
 export interface PartSummary {
