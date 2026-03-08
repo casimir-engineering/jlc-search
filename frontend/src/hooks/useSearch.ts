@@ -23,7 +23,7 @@ export function useSearch() {
   const [error, setError] = useState<string | null>(null);
   const [tookMs, setTookMs] = useState<number | null>(null);
 
-  const debouncedQuery = useDebounce(query, 250);
+  const debouncedQuery = useDebounce(query, 150);
   const abortRef = useRef<AbortController | null>(null);
 
   const [filters, setFiltersState] = useState<Filters>({

@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { join } from "path";
 import { existsSync, readFileSync, writeFileSync } from "fs";
+import { getDb } from "../db.ts";
 
 export const pcbaRouter = new Hono();
 
@@ -10,6 +11,7 @@ const CACHE_DIR = process.env.IMG_CACHE_DIR
 interface PcbaInfo {
   pcba_type: string;
   assembly_type: string;
+  description: string;
 }
 
 function cachePath(lcsc: string): string {
@@ -40,10 +42,12 @@ async function fetchPcbaInfo(lcsc: string): Promise<PcbaInfo | null> {
     const html = await res.text();
     const pcba = html.match(/PCBA Type<\/dt>\s*<dd[^>]*><span[^>]*>([^<]+)<\/span>/);
     const asm = html.match(/Assembly Type<\/dt>\s*<dd[^>]*><span[^>]*>([^<]+)<\/span>/);
+    const desc = html.match(/Description<\/dt>\s*<dd[^>]*>([^<]+)/);
     if (!pcba && !asm) return null;
     return {
       pcba_type: pcba?.[1]?.trim() ?? "unknown",
       assembly_type: asm?.[1]?.trim() ?? "unknown",
+      description: desc?.[1]?.trim() ?? "",
     };
   } catch {
     return null;
@@ -72,10 +76,15 @@ pcbaRouter.get("/:lcsc", async (c) => {
 
   if (result) {
     writeFileSync(cachePath(lcsc), JSON.stringify(result));
+    if (result.description) {
+      try {
+        getDb().run("UPDATE parts SET description = ? WHERE lcsc = ?", [result.description, lcsc]);
+      } catch {}
+    }
     return c.json({ lcsc, ...result });
   }
 
-  const fallback: PcbaInfo = { pcba_type: "unknown", assembly_type: "unknown" };
+  const fallback: PcbaInfo = { pcba_type: "unknown", assembly_type: "unknown", description: "" };
   writeFileSync(cachePath(lcsc), JSON.stringify(fallback));
   return c.json({ lcsc, ...fallback });
 });

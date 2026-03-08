@@ -14,7 +14,21 @@ const PART_TYPE_CLASS: Record<string, string> = {
   Mechanical: "badge-mechanical",
 };
 
-const POPUP_SIZE = 260;
+const CN_PACKAGE: [RegExp, string][] = [
+  [/^插件/, "THT"],
+  [/^弯插/, "THT-Right Angle"],
+  [/^贴片/, "SMD"],
+  [/^直插/, "THT"],
+];
+
+function translatePackage(pkg: string): string {
+  for (const [re, en] of CN_PACKAGE) {
+    if (re.test(pkg)) return pkg.replace(re, en);
+  }
+  return pkg;
+}
+
+const POPUP_SIZE = 390;
 const POPUP_GAP = 12;
 
 export function PartCard({ part }: Props) {
@@ -24,16 +38,20 @@ export function PartCard({ part }: Props) {
   const [popupPos, setPopupPos] = useState<{ x: number; y: number } | null>(null);
   const [pcbaType, setPcbaType] = useState<string | null>(null);
   const [asmType, setAsmType] = useState<string | null>(null);
+  const [richDesc, setRichDesc] = useState<string | null>(null);
 
   useEffect(() => {
     if (!part.lcsc) return;
-    fetch(`/api/pcba/${part.lcsc}`)
+    const ac = new AbortController();
+    fetch(`/api/pcba/${part.lcsc}`, { signal: ac.signal })
       .then(r => r.ok ? r.json() : null)
       .then(d => {
         if (d?.pcba_type && d.pcba_type !== "unknown") setPcbaType(d.pcba_type);
         if (d?.assembly_type && d.assembly_type !== "unknown") setAsmType(d.assembly_type);
+        if (d?.description) setRichDesc(d.description);
       })
       .catch(() => {});
+    return () => ac.abort();
   }, [part.lcsc]);
 
   const handleImgError = () => {
@@ -122,10 +140,13 @@ export function PartCard({ part }: Props) {
             </span>
           )}
           {asmType && <span className="badge badge-package">{asmType}</span>}
-          {part.package && <span className="badge badge-package">{part.package}</span>}
+          {part.package && <span className="badge badge-package">{translatePackage(part.package)}</span>}
         </div>
 
-        <div className="part-desc">{part.description}</div>
+        <div className="part-category">{part.category} › {part.subcategory}</div>
+        {(richDesc || part.description) && (
+          <div className="part-desc">{richDesc || part.description}</div>
+        )}
 
         <div className="part-meta">
           <span className="part-stock">
