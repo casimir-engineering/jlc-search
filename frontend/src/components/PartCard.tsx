@@ -164,7 +164,7 @@ export function PartCard({ part }: Props) {
           )}
           {part.joints != null && (
             <span className="part-joints">
-              <strong>Joints:</strong> {part.joints}
+              <strong>Pins:</strong> {part.joints}
             </span>
           )}
         </div>

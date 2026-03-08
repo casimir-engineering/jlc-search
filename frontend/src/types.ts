@@ -28,8 +28,11 @@ export interface PriceTier {
   price: number;
 }
 
+export type SortOption = "relevance" | "price_asc" | "price_desc" | "stock_desc" | "stock_asc";
+
 export interface Filters {
   partTypes: string[];
   inStock: boolean;
   fuzzy: boolean;
+  sort: SortOption;
 }

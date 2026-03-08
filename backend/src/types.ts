@@ -43,6 +43,7 @@ export interface SearchParams {
   fuzzy: boolean;
   limit: number;
   offset: number;
+  sort: "relevance" | "price_asc" | "price_desc" | "stock_desc" | "stock_asc";
 }
 
 export interface SearchResponse {

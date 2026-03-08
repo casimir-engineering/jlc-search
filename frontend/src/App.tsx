@@ -5,8 +5,11 @@ import { ResultsList } from "./components/ResultsList.tsx";
 import { StatusBar } from "./components/StatusBar.tsx";
 
 export function App() {
-  const { query, setQuery, filters, setFilters, results, total, loading, error, tookMs } =
-    useSearch();
+  const {
+    query, setQuery, filters, setFilters,
+    results, total, loading, error, tookMs,
+    page, setPage, totalPages, pageSize,
+  } = useSearch();
 
   const hasResults = results.length > 0 || query.trim().length > 0;
 
@@ -30,6 +33,10 @@ export function App() {
           error={error}
           query={query}
           tookMs={tookMs}
+          page={page}
+          totalPages={totalPages}
+          pageSize={pageSize}
+          onPageChange={setPage}
         />
       </main>
 

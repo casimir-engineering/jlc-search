@@ -71,6 +71,37 @@ function rowToSummary(row: Record<string, unknown>): PartSummary {
   };
 }
 
+/** Extract lowest unit price from price_raw string like "1-9:0.005,10-99:0.004,..." */
+function parseUnitPrice(priceRaw: string): number {
+  if (!priceRaw) return Infinity;
+  const tiers = priceRaw.split(",");
+  // First tier is typically the 1-qty price
+  const first = tiers[0];
+  if (!first) return Infinity;
+  const colonIdx = first.indexOf(":");
+  if (colonIdx < 0) return Infinity;
+  const price = parseFloat(first.slice(colonIdx + 1));
+  return isFinite(price) && price > 0 ? price : Infinity;
+}
+
+function applySortToResults(
+  results: (PartSummary & { score?: number })[],
+  sort: string
+): (PartSummary & { score?: number })[] {
+  switch (sort) {
+    case "price_asc":
+      return results.sort((a, b) => parseUnitPrice(a.price_raw) - parseUnitPrice(b.price_raw));
+    case "price_desc":
+      return results.sort((a, b) => parseUnitPrice(b.price_raw) - parseUnitPrice(a.price_raw));
+    case "stock_desc":
+      return results.sort((a, b) => b.stock - a.stock);
+    case "stock_asc":
+      return results.sort((a, b) => a.stock - b.stock);
+    default:
+      return results; // relevance — already sorted by BM25 + boost
+  }
+}
+
 /**
  * Build a single AND-group condition for part_nums.
  * Returns SQL that selects LCSCs matching all filters in the group.
@@ -153,6 +184,9 @@ export function search(params: SearchParams): { results: PartSummary[]; total: n
 
     // Path 0: Range-only query (no text tokens)
     if (!parsed.text && rfTable) {
+      const sqlOrder = params.sort === "stock_asc" ? "p.stock ASC"
+        : params.sort === "stock_desc" ? "p.stock DESC"
+        : "p.stock DESC";
       const fetchLimit = limit + 1;
       const rows = db.query<Record<string, unknown>, unknown[]>(`
         SELECT ${SELECT_COLS}
@@ -160,14 +194,14 @@ export function search(params: SearchParams): { results: PartSummary[]; total: n
         ${rfJoin}
         WHERE 1=1
         ${filter.sql}
-        ORDER BY p.stock DESC
+        ORDER BY ${sqlOrder}
         LIMIT ? OFFSET ?
       `).all(...filter.values, fetchLimit, offset);
 
       const hasMore = rows.length > limit;
       const resultRows = hasMore ? rows.slice(0, limit) : rows;
       let results = resultRows.map((r) => ({ ...rowToSummary(r), score: 0 }));
-      results = applyBoost(results, "");
+      results = applySortToResults(results, params.sort);
       const total = hasMore ? offset + limit + 1 : offset + resultRows.length;
       return { results: results.slice(0, limit), total };
     }
@@ -267,7 +301,11 @@ export function search(params: SearchParams): { results: PartSummary[]; total: n
 
     total = cnt;
     ftsResults = rows.map((r) => ({ ...rowToSummary(r), score: r.score as number }));
-    ftsResults = applyBoost(ftsResults, textQuery);
+    if (params.sort === "relevance") {
+      ftsResults = applyBoost(ftsResults, textQuery);
+    } else {
+      ftsResults = applySortToResults(ftsResults, params.sort);
+    }
 
     // Path 3: Fuzzy LIKE fallback
     if (params.fuzzy && ftsResults.length < 5) {

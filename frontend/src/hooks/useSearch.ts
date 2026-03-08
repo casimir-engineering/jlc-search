@@ -2,6 +2,8 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { searchParts } from "../api.ts";
 import type { Filters, PartSummary } from "../types.ts";
 
+const PAGE_SIZE = 50;
+
 function useDebounce<T>(value: T, delay: number): T {
   const [debounced, setDebounced] = useState(value);
   useEffect(() => {
@@ -22,6 +24,7 @@ export function useSearch() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tookMs, setTookMs] = useState<number | null>(null);
+  const [page, setPage] = useState(0);
 
   const debouncedQuery = useDebounce(query, 150);
   const abortRef = useRef<AbortController | null>(null);
@@ -30,10 +33,18 @@ export function useSearch() {
     partTypes: [],
     inStock: false,
     fuzzy: false,
+    sort: "relevance",
   });
 
   const setFilters = useCallback((update: Partial<Filters>) => {
     setFiltersState((prev) => ({ ...prev, ...update }));
+    setPage(0); // Reset to first page on filter change
+  }, []);
+
+  // Reset page when query changes
+  const setQueryAndReset = useCallback((q: string) => {
+    setQuery(q);
+    setPage(0);
   }, []);
 
   // Sync query to URL
@@ -54,7 +65,6 @@ export function useSearch() {
       return;
     }
 
-    // Cancel previous request
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -62,7 +72,11 @@ export function useSearch() {
     setLoading(true);
     setError(null);
 
-    searchParts(debouncedQuery, filters, { signal: controller.signal })
+    searchParts(debouncedQuery, filters, {
+      signal: controller.signal,
+      limit: PAGE_SIZE,
+      offset: page * PAGE_SIZE,
+    })
       .then((data) => {
         setResults(data.results);
         setTotal(data.total);
@@ -76,11 +90,13 @@ export function useSearch() {
       });
 
     return () => controller.abort();
-  }, [debouncedQuery, filters]);
+  }, [debouncedQuery, filters, page]);
+
+  const totalPages = Math.ceil(total / PAGE_SIZE);
 
   return {
     query,
-    setQuery,
+    setQuery: setQueryAndReset,
     filters,
     setFilters,
     results,
@@ -88,5 +104,9 @@ export function useSearch() {
     loading,
     error,
     tookMs,
+    page,
+    setPage,
+    totalPages,
+    pageSize: PAGE_SIZE,
   };
 }

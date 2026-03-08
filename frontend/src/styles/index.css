@@ -445,6 +445,69 @@ code { font-family: monospace; background: #eee; padding: 1px 4px; border-radius
 
 .btn-secondary:hover { border-color: #0066cc; color: #0066cc; text-decoration: none; }
 
+/* Sort select */
+.sort-select {
+  font-size: 0.82rem;
+  padding: 0.2rem 0.5rem;
+  border: 1.5px solid #d0d0d0;
+  border-radius: 6px;
+  background: #fff;
+  color: #444;
+  cursor: pointer;
+  outline: none;
+}
+.sort-select:focus { border-color: #0066cc; }
+
+/* Pagination */
+.pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.25rem;
+  margin-top: 1.25rem;
+  padding: 0.5rem 0;
+}
+
+.pagination-btn {
+  font-size: 0.82rem;
+  padding: 0.35rem 0.65rem;
+  border: 1.5px solid #d0d0d0;
+  border-radius: 6px;
+  background: #fff;
+  color: #444;
+  cursor: pointer;
+  transition: all 0.12s;
+  min-width: 36px;
+  text-align: center;
+}
+
+.pagination-btn:hover:not(:disabled) {
+  border-color: #0066cc;
+  color: #0066cc;
+}
+
+.pagination-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.pagination-active {
+  background: #0066cc;
+  border-color: #0066cc;
+  color: #fff;
+}
+
+.pagination-active:hover {
+  background: #0052a3;
+  border-color: #0052a3;
+  color: #fff;
+}
+
+.pagination-ellipsis {
+  color: #999;
+  padding: 0 0.25rem;
+}
+
 /* Footer */
 .app-footer {
   padding: 1rem;
