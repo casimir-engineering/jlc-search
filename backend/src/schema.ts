@@ -59,6 +59,14 @@ CREATE TRIGGER IF NOT EXISTS parts_au AFTER UPDATE ON parts BEGIN
   VALUES (new.rowid, new.lcsc, new.mpn, new.manufacturer, new.description, new.package, new.subcategory, new.search_text);
 END;
 
+CREATE TABLE IF NOT EXISTS part_nums (
+  lcsc  TEXT NOT NULL,
+  unit  TEXT NOT NULL,
+  value REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_part_nums_unit_value ON part_nums(unit, value);
+CREATE INDEX IF NOT EXISTS idx_part_nums_lcsc ON part_nums(lcsc);
+
 CREATE TABLE IF NOT EXISTS ingest_meta (
   category    TEXT NOT NULL,
   subcategory TEXT NOT NULL,

@@ -1,5 +1,5 @@
 import { getDb } from "../db.ts";
-import { buildFtsQuery, buildFtsOrQuery, detectLcscCode } from "./parser.ts";
+import { buildFtsQuery, buildFtsOrQuery, detectLcscCode, parseQuery, type RangeFilter } from "./parser.ts";
 import type { PartSummary, SearchParams } from "../types.ts";
 
 const SELECT_COLS = `
@@ -71,6 +71,59 @@ function rowToSummary(row: Record<string, unknown>): PartSummary {
   };
 }
 
+/**
+ * Build a single AND-group condition for part_nums.
+ * Returns SQL that selects LCSCs matching all filters in the group.
+ */
+function buildAndGroupSql(group: RangeFilter[], values: unknown[]): string {
+  if (group.length === 1) {
+    const f = group[0];
+    return singleFilterSql(f, values);
+  }
+  // INTERSECT the individual filters
+  return group.map((f) => singleFilterSql(f, values)).join("\nINTERSECT\n");
+}
+
+function singleFilterSql(f: RangeFilter, values: unknown[]): string {
+  let condition: string;
+  switch (f.op) {
+    case "gt":    condition = "value > ?"; values.push(f.unit, f.value); break;
+    case "gte":   condition = "value >= ?"; values.push(f.unit, f.value); break;
+    case "lt":    condition = "value < ?"; values.push(f.unit, f.value); break;
+    case "lte":   condition = "value <= ?"; values.push(f.unit, f.value); break;
+    case "eq":    condition = "value = ?"; values.push(f.unit, f.value); break;
+    case "between": condition = "value BETWEEN ? AND ?"; values.push(f.unit, f.min, f.max); break;
+  }
+  return `SELECT DISTINCT lcsc FROM part_nums WHERE unit = ? AND ${condition!}`;
+}
+
+/**
+ * Materialize range filter results into a temp table for fast JOINs.
+ * Returns the temp table name, or null if no filters.
+ */
+function materializeRangeFilter(
+  db: ReturnType<typeof getDb>,
+  filterGroups: RangeFilter[][]
+): string | null {
+  if (filterGroups.length === 0) return null;
+
+  const values: unknown[] = [];
+  let sql: string;
+
+  if (filterGroups.length === 1) {
+    sql = buildAndGroupSql(filterGroups[0], values);
+  } else {
+    // UNION the OR groups
+    sql = filterGroups.map((g) => buildAndGroupSql(g, values)).join("\nUNION\n");
+  }
+
+  db.run("DROP TABLE IF EXISTS _range_filter");
+  db.run(`CREATE TEMP TABLE _range_filter AS ${sql}`, values);
+  db.run("CREATE INDEX IF NOT EXISTS _rf_idx ON _range_filter(lcsc)");
+
+  return "_range_filter";
+}
+
 export function search(params: SearchParams): { results: PartSummary[]; total: number } {
   const db = getDb();
   const { q, limit, offset } = params;
@@ -81,142 +134,176 @@ export function search(params: SearchParams): { results: PartSummary[]; total: n
   }
 
   const filter = buildFilterClause(params);
+  const parsed = parseQuery(trimmed);
 
-  // Path 1: Exact LCSC code lookup
-  if (detectLcscCode(trimmed)) {
-    const row = db.query<Record<string, unknown>, unknown[]>(
-      `SELECT ${SELECT_COLS} FROM parts p WHERE p.lcsc = ? ${filter.sql} LIMIT 1`
-    ).get(trimmed.toUpperCase(), ...filter.values);
+  // Materialize range filters into temp table
+  const rfTable = materializeRangeFilter(db, parsed.filterGroups);
+  const rfJoin = rfTable ? `JOIN ${rfTable} rf ON rf.lcsc = p.lcsc` : "";
 
-    if (row) return { results: [rowToSummary(row)], total: 1 };
-    // Fall through to FTS if not found (e.g. wrong case or partial)
-  }
+  try {
+    // Path 1: Exact LCSC code lookup
+    if (!rfTable && detectLcscCode(parsed.text || trimmed)) {
+      const code = (parsed.text || trimmed).toUpperCase();
+      const row = db.query<Record<string, unknown>, unknown[]>(
+        `SELECT ${SELECT_COLS} FROM parts p ${rfJoin} WHERE p.lcsc = ? ${filter.sql} LIMIT 1`
+      ).get(code, ...filter.values);
 
-  // Path 2: FTS5 BM25 search
-  // Try AND query first (all tokens must match), fall back to OR if no results
-  const ftsAndQuery = buildFtsQuery(trimmed);
-  const ftsOrQuery = buildFtsOrQuery(trimmed);
-
-  let ftsResults: (PartSummary & { score?: number })[] = [];
-  let total = 0;
-
-  const runFts = (matchQuery: string, fetchLimit = limit): { rows: Record<string, unknown>[]; cnt: number } => {
-    try {
-      // Field weights: lcsc=10, mpn=8, manufacturer=3, description=5, package=2, subcategory=4, search_text=3
-      const rows = db.query<Record<string, unknown>, unknown[]>(`
-        SELECT ${SELECT_COLS},
-          bm25(parts_fts, 10, 8, 3, 5, 2, 4, 3) AS score
-        FROM parts_fts
-        JOIN parts p ON p.rowid = parts_fts.rowid
-        WHERE parts_fts MATCH ?
-        ${filter.sql}
-        ORDER BY score ASC
-        LIMIT ? OFFSET ?
-      `).all(matchQuery, ...filter.values, fetchLimit, offset);
-
-      const countRow = db.query<{ cnt: number }, unknown[]>(`
-        SELECT COUNT(*) AS cnt
-        FROM parts_fts
-        JOIN parts p ON p.rowid = parts_fts.rowid
-        WHERE parts_fts MATCH ?
-        ${filter.sql}
-      `).get(matchQuery, ...filter.values);
-
-      return { rows, cnt: countRow?.cnt ?? 0 };
-    } catch {
-      return { rows: [], cnt: 0 };
+      if (row) return { results: [rowToSummary(row)], total: 1 };
     }
-  };
 
-  // Try strict AND first
-  let { rows, cnt } = runFts(ftsAndQuery);
+    // Path 0: Range-only query (no text tokens)
+    if (!parsed.text && rfTable) {
+      const fetchLimit = limit + 1;
+      const rows = db.query<Record<string, unknown>, unknown[]>(`
+        SELECT ${SELECT_COLS}
+        FROM parts p
+        ${rfJoin}
+        WHERE 1=1
+        ${filter.sql}
+        ORDER BY p.stock DESC
+        LIMIT ? OFFSET ?
+      `).all(...filter.values, fetchLimit, offset);
 
-  // If AND returns no results, use smart token dropping then OR as last resort.
-  // In fallback mode, fetch more results so the LCSC canonical boost can re-rank them.
-  const FALLBACK_FETCH = Math.max(300, limit * 15);
-  if (cnt === 0 && trimmed.includes(" ")) {
-    const tokens = trimmed.split(/\s+/).filter(Boolean);
+      const hasMore = rows.length > limit;
+      const resultRows = hasMore ? rows.slice(0, limit) : rows;
+      let results = resultRows.map((r) => ({ ...rowToSummary(r), score: 0 }));
+      results = applyBoost(results, "");
+      const total = hasMore ? offset + limit + 1 : offset + resultRows.length;
+      return { results: results.slice(0, limit), total };
+    }
 
-    if (tokens.length >= 2) {
-      // Step 1: Find which tokens have zero individual FTS matches — drop those first.
-      const tokMatchCounts = tokens.map((tok) => {
-        const q = `"${tok.replace(/"/g, '""')}"*`;
-        try { return { tok, cnt: db.query<{ cnt: number }, unknown[]>(`SELECT COUNT(*) AS cnt FROM parts_fts WHERE parts_fts MATCH ?`).get(q)?.cnt ?? 0 }; }
-        catch { return { tok, cnt: 0 }; }
-      });
-      const matchingTokens = tokMatchCounts.filter((t) => t.cnt > 0).map((t) => t.tok);
+    // Path 2: FTS5 BM25 search (with optional range filters)
+    const textQuery = parsed.text || trimmed;
+    const ftsAndQuery = buildFtsQuery(textQuery);
+    const ftsOrQuery = buildFtsOrQuery(textQuery);
 
-      // Step 2: Try AND with only the matching tokens (if subset dropped some)
-      if (matchingTokens.length >= 2 && matchingTokens.length < tokens.length) {
-        const result = runFts(buildFtsQuery(matchingTokens.join(" ")), FALLBACK_FETCH);
-        if (result.cnt > 0) {
-          rows = result.rows;
-          cnt = result.cnt;
+    let ftsResults: (PartSummary & { score?: number })[] = [];
+    let total = 0;
+
+    const runFts = (matchQuery: string, fetchLimit = limit): { rows: Record<string, unknown>[]; cnt: number } => {
+      try {
+        const rows = db.query<Record<string, unknown>, unknown[]>(`
+          SELECT ${SELECT_COLS},
+            bm25(parts_fts, 10, 8, 3, 5, 2, 4, 3) AS score
+          FROM parts_fts
+          JOIN parts p ON p.rowid = parts_fts.rowid
+          ${rfJoin}
+          WHERE parts_fts MATCH ?
+          ${filter.sql}
+          ORDER BY score ASC
+          LIMIT ? OFFSET ?
+        `).all(matchQuery, ...filter.values, fetchLimit, offset);
+
+        // Skip expensive COUNT when range filters — estimate from results
+        if (rfTable) {
+          const cnt = rows.length < fetchLimit ? offset + rows.length : offset + fetchLimit + 1;
+          return { rows, cnt };
         }
+
+        const countRow = db.query<{ cnt: number }, unknown[]>(`
+          SELECT COUNT(*) AS cnt
+          FROM parts_fts
+          JOIN parts p ON p.rowid = parts_fts.rowid
+          ${rfJoin}
+          WHERE parts_fts MATCH ?
+          ${filter.sql}
+        `).get(matchQuery, ...filter.values);
+
+        return { rows, cnt: countRow?.cnt ?? 0 };
+      } catch {
+        return { rows: [], cnt: 0 };
       }
+    };
 
-      // Step 3: Still no results — progressively drop longest remaining tokens
-      if (cnt === 0) {
-        const tryTokens = matchingTokens.length >= 2 ? matchingTokens : tokens;
-        const sortedByLength = [...tryTokens].sort((a, b) => b.length - a.length);
-        const kept = new Set(tryTokens);
+    // Try strict AND first
+    let { rows, cnt } = runFts(ftsAndQuery);
 
-        for (const dropTok of sortedByLength) {
-          if (kept.size < 2) break;
-          kept.delete(dropTok);
-          const remaining = tryTokens.filter((t) => kept.has(t));
-          const result = runFts(buildFtsQuery(remaining.join(" ")), FALLBACK_FETCH);
+    // If AND returns no results, use smart token dropping then OR as last resort.
+    const FALLBACK_FETCH = Math.max(300, limit * 15);
+    if (cnt === 0 && textQuery.includes(" ")) {
+      const tokens = textQuery.split(/\s+/).filter(Boolean);
+
+      if (tokens.length >= 2) {
+        const tokMatchCounts = tokens.map((tok) => {
+          const q = `"${tok.replace(/"/g, '""')}"*`;
+          try { return { tok, cnt: db.query<{ cnt: number }, unknown[]>(`SELECT COUNT(*) AS cnt FROM parts_fts WHERE parts_fts MATCH ?`).get(q)?.cnt ?? 0 }; }
+          catch { return { tok, cnt: 0 }; }
+        });
+        const matchingTokens = tokMatchCounts.filter((t) => t.cnt > 0).map((t) => t.tok);
+
+        if (matchingTokens.length >= 2 && matchingTokens.length < tokens.length) {
+          const result = runFts(buildFtsQuery(matchingTokens.join(" ")), FALLBACK_FETCH);
           if (result.cnt > 0) {
             rows = result.rows;
             cnt = result.cnt;
-            break;
+          }
+        }
+
+        if (cnt === 0) {
+          const tryTokens = matchingTokens.length >= 2 ? matchingTokens : tokens;
+          const sortedByLength = [...tryTokens].sort((a, b) => b.length - a.length);
+          const kept = new Set(tryTokens);
+
+          for (const dropTok of sortedByLength) {
+            if (kept.size < 2) break;
+            kept.delete(dropTok);
+            const remaining = tryTokens.filter((t) => kept.has(t));
+            const result = runFts(buildFtsQuery(remaining.join(" ")), FALLBACK_FETCH);
+            if (result.cnt > 0) {
+              rows = result.rows;
+              cnt = result.cnt;
+              break;
+            }
           }
         }
       }
-    }
 
-    // Final fallback: OR semantics if still no results
-    if (cnt === 0) {
-      const orResult = runFts(ftsOrQuery);
-      rows = orResult.rows;
-      cnt = orResult.cnt;
-    }
-  }
-
-  total = cnt;
-  ftsResults = rows.map((r) => ({ ...rowToSummary(r), score: r.score as number }));
-
-  // Apply application-layer boost
-  ftsResults = applyBoost(ftsResults, trimmed);
-
-  // Path 3: Fuzzy LIKE fallback when FTS returns few results and fuzzy is enabled
-  if (params.fuzzy && ftsResults.length < 5) {
-    const tokens = trimmed.split(/\s+/).filter(Boolean);
-    const likeClauses = tokens
-      .map(() => "(p.description LIKE ? OR p.mpn LIKE ? OR p.lcsc LIKE ?)")
-      .join(" AND ");
-    const likeValues = tokens.flatMap((t) => [`%${t}%`, `%${t}%`, `%${t}%`]);
-
-    const fuzzyRows = db.query<Record<string, unknown>, unknown[]>(`
-      SELECT ${SELECT_COLS}
-      FROM parts p
-      WHERE ${likeClauses}
-      ${filter.sql}
-      LIMIT ?
-    `).all(...likeValues, ...filter.values, limit);
-
-    const fuzzyResults = fuzzyRows.map(rowToSummary);
-
-    // Merge: add fuzzy results not already in FTS results
-    const seen = new Set(ftsResults.map((r) => r.lcsc));
-    for (const r of fuzzyResults) {
-      if (!seen.has(r.lcsc)) {
-        ftsResults.push(r);
-        seen.add(r.lcsc);
+      if (cnt === 0) {
+        const orResult = runFts(ftsOrQuery);
+        rows = orResult.rows;
+        cnt = orResult.cnt;
       }
     }
-    total = Math.max(total, ftsResults.length);
-  }
 
-  return { results: ftsResults.slice(0, limit), total };
+    total = cnt;
+    ftsResults = rows.map((r) => ({ ...rowToSummary(r), score: r.score as number }));
+    ftsResults = applyBoost(ftsResults, textQuery);
+
+    // Path 3: Fuzzy LIKE fallback
+    if (params.fuzzy && ftsResults.length < 5) {
+      const tokens = textQuery.split(/\s+/).filter(Boolean);
+      if (tokens.length > 0) {
+        const likeClauses = tokens
+          .map(() => "(p.description LIKE ? OR p.mpn LIKE ? OR p.lcsc LIKE ?)")
+          .join(" AND ");
+        const likeValues = tokens.flatMap((t) => [`%${t}%`, `%${t}%`, `%${t}%`]);
+
+        const fuzzyRows = db.query<Record<string, unknown>, unknown[]>(`
+          SELECT ${SELECT_COLS}
+          FROM parts p
+          ${rfJoin}
+          WHERE ${likeClauses}
+          ${filter.sql}
+          LIMIT ?
+        `).all(...likeValues, ...filter.values, limit);
+
+        const fuzzyResults = fuzzyRows.map(rowToSummary);
+        const seen = new Set(ftsResults.map((r) => r.lcsc));
+        for (const r of fuzzyResults) {
+          if (!seen.has(r.lcsc)) {
+            ftsResults.push(r);
+            seen.add(r.lcsc);
+          }
+        }
+        total = Math.max(total, ftsResults.length);
+      }
+    }
+
+    return { results: ftsResults.slice(0, limit), total };
+  } finally {
+    // Clean up temp table
+    if (rfTable) {
+      try { db.run(`DROP TABLE IF EXISTS ${rfTable}`); } catch {}
+    }
+  }
 }

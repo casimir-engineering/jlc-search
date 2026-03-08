@@ -1,5 +1,6 @@
 import { Database } from "bun:sqlite";
 import type { PartRow, StockData } from "./types.ts";
+import { extractNumericAttrs } from "./attrs.ts";
 
 const INSERT_SQL = `
   INSERT OR REPLACE INTO parts
@@ -33,21 +34,33 @@ export function recreateFtsTriggers(db: Database): void {
   END`);
 }
 
-/** Bulk insert parts in chunks of 1000, using a transaction per chunk. */
+/** Bulk insert parts in chunks of 1000, using a transaction per chunk.
+ *  Also inserts numeric attributes into part_nums for range filtering. */
 export function bulkInsertParts(db: Database, parts: PartRow[]): void {
   const stmt = db.prepare(INSERT_SQL);
+  const numStmt = db.prepare("INSERT INTO part_nums (lcsc, unit, value) VALUES (?, ?, ?)");
+  // Ensure part_nums table exists
+  db.run(`CREATE TABLE IF NOT EXISTS part_nums (lcsc TEXT NOT NULL, unit TEXT NOT NULL, value REAL NOT NULL)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_part_nums_unit_value ON part_nums(unit, value)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_part_nums_lcsc ON part_nums(lcsc)`);
+
   const CHUNK = 1000;
   for (let i = 0; i < parts.length; i += CHUNK) {
     const chunk = parts.slice(i, i + CHUNK);
     db.transaction(() => {
       for (const p of chunk) {
-        // Use positional params; coerce undefined→null for every field
         const n = (v: unknown) => (v === undefined ? null : v);
         stmt.run(
           n(p.lcsc), n(p.mpn), n(p.manufacturer), n(p.category), n(p.subcategory),
           n(p.description), n(p.datasheet), n(p.package), n(p.joints), n(p.stock),
           n(p.price_raw), n(p.img), n(p.url), n(p.part_type), n(p.pcba_type), n(p.attributes), n(p.search_text)
         );
+        // Delete old numeric attrs for this part (INSERT OR REPLACE on parts may update)
+        db.run("DELETE FROM part_nums WHERE lcsc = ?", [p.lcsc]);
+        const nums = extractNumericAttrs(p.attributes);
+        for (const { unit, value } of nums) {
+          numStmt.run(p.lcsc, unit, value);
+        }
       }
     })();
   }

@@ -112,6 +112,47 @@ function formatAttrValue(value: unknown, type: string): string | null {
  * Build a searchable text string from the attributes JSON blob.
  * Returns space-separated tokens suitable for FTS5 indexing.
  */
+export interface NumericAttr {
+  unit: string;  // V, Ohm, F, A, H, W, Hz
+  value: number;
+}
+
+/**
+ * Extract numeric attribute values with their units from attributes JSON.
+ * Used to populate the part_nums table for range filtering.
+ */
+export function extractNumericAttrs(attrsJson: string): NumericAttr[] {
+  let attrs: Record<string, unknown>;
+  try {
+    attrs = JSON.parse(attrsJson);
+  } catch {
+    return [];
+  }
+
+  const results: NumericAttr[] = [];
+
+  for (const [key, raw] of Object.entries(attrs)) {
+    if (SKIP_KEYS.has(key)) continue;
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+
+    const entry = raw as AttrEntry;
+    const extracted = extractAttrValueAndType(entry);
+    if (!extracted) continue;
+
+    const typeLower = extracted.type.toLowerCase();
+    const unit = TYPE_UNITS[typeLower];
+    if (unit && typeof extracted.value === "number" && isFinite(extracted.value)) {
+      results.push({ unit, value: extracted.value });
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Build a searchable text string from the attributes JSON blob.
+ * Returns space-separated tokens suitable for FTS5 indexing.
+ */
 export function buildSearchText(attrsJson: string): string {
   let attrs: Record<string, unknown>;
   try {
