@@ -1,0 +1,44 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    ports:
+      - "3001:3001"
+    volumes:
+      - parts_data:/app/data
+    environment:
+      DB_PATH: /app/data/parts.db
+      PORT: "3001"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3001/api/status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  frontend:
+    build:
+      context: frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  ingest:
+    build:
+      context: .
+      dockerfile: ingest/Dockerfile
+    volumes:
+      - parts_data:/app/data
+    environment:
+      DB_PATH: /app/data/parts.db
+      JLCPARTS_BASE: https://yaqwsx.github.io/jlcparts
+      INGEST_CONCURRENCY: "4"
+    profiles:
+      - tools
+
+volumes:
+  parts_data:

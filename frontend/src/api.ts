@@ -1,0 +1,31 @@
+import type { SearchResponse } from "./types.ts";
+
+const API_BASE = import.meta.env.VITE_API_BASE ?? "";
+
+export async function searchParts(
+  q: string,
+  filters: { partTypes: string[]; inStock: boolean; fuzzy: boolean },
+  options?: { signal?: AbortSignal }
+): Promise<SearchResponse> {
+  const params = new URLSearchParams({ q });
+  for (const pt of filters.partTypes) params.append("partType", pt);
+  if (filters.inStock) params.set("inStock", "true");
+  if (filters.fuzzy) params.set("fuzzy", "true");
+  params.set("limit", "50");
+
+  const res = await fetch(`${API_BASE}/api/search?${params}`, {
+    signal: options?.signal,
+  });
+  if (!res.ok) throw new Error(`Search failed: ${res.status}`);
+  return res.json() as Promise<SearchResponse>;
+}
+
+export async function getStatus(): Promise<{
+  total_parts: number;
+  last_ingested: string | null;
+  categories_count: number;
+}> {
+  const res = await fetch(`${API_BASE}/api/status`);
+  if (!res.ok) throw new Error("Status fetch failed");
+  return res.json();
+}
