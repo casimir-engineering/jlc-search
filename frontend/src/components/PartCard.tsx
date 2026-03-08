@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import type { PartSummary } from "../types.ts";
 import { PriceTable } from "./PriceTable.tsx";
@@ -22,6 +22,19 @@ export function PartCard({ part }: Props) {
   const [imgFailed, setImgFailed] = useState(false);
   const [imgKey, setImgKey] = useState(0);
   const [popupPos, setPopupPos] = useState<{ x: number; y: number } | null>(null);
+  const [pcbaType, setPcbaType] = useState<string | null>(null);
+  const [asmType, setAsmType] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!part.lcsc) return;
+    fetch(`/api/pcba/${part.lcsc}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (d?.pcba_type && d.pcba_type !== "unknown") setPcbaType(d.pcba_type);
+        if (d?.assembly_type && d.assembly_type !== "unknown") setAsmType(d.assembly_type);
+      })
+      .catch(() => {});
+  }, [part.lcsc]);
 
   const handleImgError = () => {
     if (imgSrc?.startsWith("/api/img/")) {
@@ -103,7 +116,12 @@ export function PartCard({ part }: Props) {
           <span className={`badge ${PART_TYPE_CLASS[part.part_type] ?? "badge-extended"}`}>
             {part.part_type}
           </span>
-          <span className="badge badge-pcba">{part.pcba_type}</span>
+          {pcbaType && (
+            <span className={`badge ${pcbaType.includes("Economic") ? "badge-basic" : "badge-extended"}`}>
+              {pcbaType.includes("Economic") ? "Economic" : "Standard"}
+            </span>
+          )}
+          {asmType && <span className="badge badge-package">{asmType}</span>}
           {part.package && <span className="badge badge-package">{part.package}</span>}
         </div>
 

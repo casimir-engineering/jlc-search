@@ -5,6 +5,7 @@ import { partRouter } from "./routes/part.ts";
 import { statusRouter } from "./routes/status.ts";
 import { imgRouter } from "./routes/img.ts";
 import { fpRouter } from "./routes/fp.ts";
+import { pcbaRouter } from "./routes/pcba.ts";
 
 const app = new Hono();
 
@@ -15,6 +16,7 @@ app.route("/api/parts", partRouter);
 app.route("/api/status", statusRouter);
 app.route("/api/img", imgRouter);
 app.route("/api/fp", fpRouter);
+app.route("/api/pcba", pcbaRouter);
 
 app.get("/", (c) => c.json({ ok: true, service: "jst-search" }));
 
