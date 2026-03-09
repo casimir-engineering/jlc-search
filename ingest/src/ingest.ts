@@ -6,6 +6,7 @@ import { parseComponent } from "./parser.ts";
 import {
   bulkInsertParts,
   bulkUpdateStock,
+  recoverFromCrash,
   disableSearchTrigger,
   enableSearchTrigger,
   rebuildSearchVectors,
@@ -19,6 +20,8 @@ const CONCURRENCY = parseInt(process.env.INGEST_CONCURRENCY ?? "4");
 // Ensure data/img directory exists for image caching
 mkdirSync("data/img", { recursive: true });
 
+let stopping = false;
+
 async function withConcurrency<T>(
   items: T[],
   concurrency: number,
@@ -26,7 +29,7 @@ async function withConcurrency<T>(
 ): Promise<void> {
   const queue = [...items];
   const workers = Array.from({ length: concurrency }, async () => {
-    while (queue.length > 0) {
+    while (queue.length > 0 && !stopping) {
       const item = queue.shift()!;
       await fn(item);
     }
@@ -49,8 +52,11 @@ async function main() {
   console.log(`DB: ${DATABASE_URL.replace(/:[^:@]+@/, ":***@")}`);
   console.log(`Source: ${JLCPARTS_BASE}`);
 
-  const sql = postgres(DATABASE_URL, { max: 10 });
+  const sql = postgres(DATABASE_URL, { max: 10, onnotice: () => {} });
   await applySchema(sql);
+
+  // Recover from prior crash (rebuild NULL search vectors, re-enable trigger)
+  await recoverFromCrash(sql);
 
   // Fetch master index
   const index = await fetchIndex(JLCPARTS_BASE);
@@ -94,6 +100,16 @@ async function main() {
     await sql.end();
     return;
   }
+
+  // Trap SIGINT for graceful stop
+  process.on("SIGINT", () => {
+    if (stopping) {
+      console.log("\n  Force quit.");
+      process.exit(1);
+    }
+    stopping = true;
+    console.log("\n  Stopping after in-flight items finish... (Ctrl+C again to force quit)");
+  });
 
   // Disable trigger for bulk performance
   let needsVectorRebuild = false;
@@ -140,13 +156,21 @@ async function main() {
   });
 
   // Rebuild search vectors and re-enable trigger
-  if (needsVectorRebuild) {
+  if (needsVectorRebuild || stopping) {
     await rebuildSearchVectors(sql);
   }
   await enableSearchTrigger(sql);
 
   const [countRow] = await sql`SELECT COUNT(*) AS cnt FROM parts`;
-  console.log(`\nIngest complete. Total parts in DB: ${countRow?.cnt ?? 0}`);
+
+  if (stopping) {
+    console.log(`\n=== Stopped by user ===`);
+    console.log(`  Processed ${processed}/${total} subcategories`);
+    console.log(`  Total parts in DB: ${countRow?.cnt ?? 0}`);
+    console.log(`  Re-run to process remaining subcategories (unchanged ones are skipped).`);
+  } else {
+    console.log(`\nIngest complete. Total parts in DB: ${countRow?.cnt ?? 0}`);
+  }
 
   await sql.end();
 }

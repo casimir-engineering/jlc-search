@@ -3,17 +3,28 @@
  * Merges into existing DB by LCSC code (ON CONFLICT DO UPDATE).
  *
  * JLCPCB API limits: 100 parts/page, max 1000 pages = 100k parts per query.
- * We partition by firstSortName (category) to maximize coverage.
+ * We use hierarchical sub-partitioning (category → subcategory → stock filter)
+ * to maximize coverage beyond the 100k limit.
  *
- * Usage: bun run ingest/src/jlcpcb-api.ts [--resume]
+ * Usage: bun run ingest/src/jlcpcb-api.ts [--fresh]
  *
- * Progress is saved to data/jlcpcb-progress.json for resume capability.
- * Estimated runtime: 3-6 hours for full ingestion.
+ * Auto-resumes from data/jlcpcb-progress.json if a previous run was interrupted.
+ * Ctrl+C stops gracefully: flushes current batch, saves progress, rebuilds search vectors.
+ * Use --fresh to discard previous progress and start from scratch.
  */
 import postgres from "postgres";
+import { readFileSync, writeFileSync, unlinkSync } from "fs";
 import { applySchema } from "../../backend/src/schema.ts";
 import { translateChinese } from "./chinese-dict.ts";
-import { buildSearchText, extractNumericAttrs } from "./attrs.ts";
+import { buildSearchText } from "./attrs.ts";
+import {
+  bulkInsertParts,
+  recoverFromCrash,
+  disableSearchTrigger,
+  enableSearchTrigger,
+  rebuildSearchVectors,
+} from "./writer.ts";
+import type { PartRow } from "./types.ts";
 
 const DATABASE_URL = process.env.DATABASE_URL ?? "postgres://jst:jst@localhost:5432/jst";
 const PROGRESS_FILE = "data/jlcpcb-progress.json";
@@ -21,8 +32,9 @@ const API_URL =
   "https://jlcpcb.com/api/overseas-pcb-order/v1/shoppingCart/smtGood/selectSmtComponentList";
 const PAGE_SIZE = 100;
 const MAX_PAGES = 1000;
+const MAX_FETCHABLE = MAX_PAGES * PAGE_SIZE; // 100,000
 const DELAY_MS = 300;
-const BATCH_SIZE = 500;
+const BATCH_SIZE = 1000;
 
 const CATEGORIES = [
   "Resistors", "Capacitors", "Connectors",
@@ -63,9 +75,22 @@ interface JlcPart {
   attributes?: Record<string, unknown>;
 }
 
+interface QueryParams {
+  firstSortName: string;
+  secondSortName?: string;
+  stockFlag?: number;
+  componentLibraryType?: string;
+}
+
+interface ApiQuery {
+  key: string;
+  label: string;
+  params: QueryParams;
+}
+
 interface Progress {
-  completedCategories: string[];
-  currentCategory: string | null;
+  completedQueries: string[];
+  currentQuery: string | null;
   currentPage: number;
   totalFetched: number;
   totalNew: number;
@@ -75,15 +100,18 @@ interface Progress {
 // ── API fetch ──
 
 async function fetchPage(
-  category: string,
+  params: QueryParams,
   page: number,
 ): Promise<{ parts: JlcPart[]; total: number } | null> {
-  const body = {
+  const body: Record<string, unknown> = {
     keyword: "",
     pageSize: PAGE_SIZE,
     currentPage: page,
-    firstSortName: category,
+    firstSortName: params.firstSortName,
   };
+  if (params.secondSortName !== undefined) body.secondSortName = params.secondSortName;
+  if (params.stockFlag !== undefined) body.stockFlag = params.stockFlag;
+  if (params.componentLibraryType !== undefined) body.componentLibraryType = params.componentLibraryType;
 
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
@@ -94,7 +122,7 @@ async function fetchPage(
       });
 
       if (!resp.ok) {
-        console.error(`  HTTP ${resp.status} for ${category} page ${page}, retrying...`);
+        console.error(`  HTTP ${resp.status} for page ${page}, retrying...`);
         await Bun.sleep(2000 * (attempt + 1));
         continue;
       }
@@ -116,14 +144,105 @@ async function fetchPage(
         total: data.data.componentPageInfo.total,
       };
     } catch (err) {
-      console.error(`  Fetch error for ${category} page ${page}: ${err}, retrying...`);
+      console.error(`  Fetch error for page ${page}: ${err}, retrying...`);
       await Bun.sleep(2000 * (attempt + 1));
     }
   }
   return null;
 }
 
-// ── Convert API part to DB row ──
+async function fetchTotal(params: QueryParams): Promise<number> {
+  const result = await fetchPage(params, 1);
+  await Bun.sleep(DELAY_MS);
+  return result?.total ?? 0;
+}
+
+// ── Subcategory discovery ──
+
+async function discoverSubcategories(category: string): Promise<string[]> {
+  const seen = new Set<string>();
+  for (const page of [1, 200, 400, 600, 800, 1000]) {
+    const result = await fetchPage({ firstSortName: category }, page);
+    if (result) {
+      for (const part of result.parts) {
+        if (part.firstSortName) seen.add(part.firstSortName);
+      }
+    }
+    await Bun.sleep(DELAY_MS);
+  }
+  return [...seen];
+}
+
+// ── Query planner ──
+
+function buildQueryKey(params: QueryParams): string {
+  const parts: string[] = [params.firstSortName];
+  if (params.secondSortName) parts.push(params.secondSortName);
+  if (params.stockFlag === 1) parts.push("instock");
+  if (params.componentLibraryType) parts.push(params.componentLibraryType);
+  return parts.join(" > ");
+}
+
+async function buildWorkQueue(): Promise<ApiQuery[]> {
+  const queue: ApiQuery[] = [];
+
+  for (const category of CATEGORIES) {
+    const catTotal = await fetchTotal({ firstSortName: category });
+
+    if (catTotal === 0) {
+      console.log(`[planner] ${category}: 0 parts, skipping`);
+      continue;
+    }
+
+    if (catTotal <= MAX_FETCHABLE) {
+      const params: QueryParams = { firstSortName: category };
+      queue.push({ key: buildQueryKey(params), label: `${category} [${catTotal.toLocaleString()}]`, params });
+      console.log(`[planner] ${category}: ${catTotal.toLocaleString()} — single query`);
+      continue;
+    }
+
+    // Category too large — split by subcategory
+    console.log(`[planner] ${category}: ${catTotal.toLocaleString()} — splitting by subcategory`);
+    const subcategories = await discoverSubcategories(category);
+    console.log(`  Found ${subcategories.length} subcategories`);
+
+    for (const sub of subcategories) {
+      const subParams: QueryParams = { firstSortName: category, secondSortName: sub };
+      const subTotal = await fetchTotal(subParams);
+
+      if (subTotal <= MAX_FETCHABLE) {
+        queue.push({
+          key: buildQueryKey(subParams),
+          label: `${category} > ${sub} [${subTotal.toLocaleString()}]`,
+          params: subParams,
+        });
+        console.log(`  ${sub}: ${subTotal.toLocaleString()} — single query`);
+        continue;
+      }
+
+      // Subcategory too large — add in-stock query + capped all-parts query
+      const instockParams: QueryParams = { ...subParams, stockFlag: 1 };
+      const instockTotal = await fetchTotal(instockParams);
+
+      queue.push({
+        key: buildQueryKey(instockParams),
+        label: `${category} > ${sub} [instock: ${instockTotal.toLocaleString()}]`,
+        params: instockParams,
+      });
+      queue.push({
+        key: buildQueryKey(subParams),
+        label: `${category} > ${sub} [all: capped at 100k of ${subTotal.toLocaleString()}]`,
+        params: subParams,
+      });
+      console.log(`  ${sub}: ${subTotal.toLocaleString()} — split: instock (${instockTotal.toLocaleString()}) + all (capped 100k)`);
+    }
+  }
+
+  console.log(`\n[planner] Work queue: ${queue.length} queries`);
+  return queue;
+}
+
+// ── Convert API part to PartRow ──
 
 function mapPartType(libraryType: string): string {
   switch (libraryType) {
@@ -143,7 +262,7 @@ function formatPrices(
     .join(",");
 }
 
-function convertPart(p: JlcPart) {
+function convertPart(p: JlcPart): PartRow {
   const lcsc = (p.componentCode || "").toUpperCase();
   const partType = mapPartType(p.componentLibraryType);
   const pcbaType =
@@ -173,64 +292,20 @@ function convertPart(p: JlcPart) {
   };
 }
 
-// ── DB operations ──
-
-const INSERT_COLS = [
-  "lcsc", "mpn", "manufacturer", "category", "subcategory", "description",
-  "datasheet", "package", "joints", "stock", "price_raw", "img", "url",
-  "part_type", "pcba_type", "attributes", "search_text",
-] as const;
-
-async function insertBatch(
-  sql: ReturnType<typeof postgres>,
-  parts: ReturnType<typeof convertPart>[],
-): Promise<number> {
-  const valid = parts.filter((p) => p.lcsc);
-  if (valid.length === 0) return 0;
-
-  await sql`
-    INSERT INTO parts ${sql(valid, ...INSERT_COLS)}
-    ON CONFLICT (lcsc) DO UPDATE SET
-      mpn = EXCLUDED.mpn, manufacturer = EXCLUDED.manufacturer,
-      category = EXCLUDED.category, subcategory = EXCLUDED.subcategory,
-      description = EXCLUDED.description, datasheet = EXCLUDED.datasheet,
-      package = EXCLUDED.package, joints = EXCLUDED.joints,
-      stock = EXCLUDED.stock, price_raw = EXCLUDED.price_raw,
-      img = EXCLUDED.img, url = EXCLUDED.url,
-      part_type = EXCLUDED.part_type, pcba_type = EXCLUDED.pcba_type,
-      attributes = EXCLUDED.attributes, search_text = EXCLUDED.search_text
-  `;
-
-  // Numeric attributes
-  const lcscs = valid.map((p) => p.lcsc);
-  await sql`DELETE FROM part_nums WHERE lcsc IN ${sql(lcscs)}`;
-
-  const numRows: { lcsc: string; unit: string; value: number }[] = [];
-  for (const p of valid) {
-    for (const { unit, value } of extractNumericAttrs(p.attributes, p.description)) {
-      numRows.push({ lcsc: p.lcsc, unit, value });
-    }
-  }
-  if (numRows.length > 0) {
-    const NC = 5000;
-    for (let i = 0; i < numRows.length; i += NC) {
-      await sql`INSERT INTO part_nums ${sql(numRows.slice(i, i + NC), "lcsc", "unit", "value")}`;
-    }
-  }
-
-  return valid.length;
-}
-
 // ── Progress tracking ──
 
 function loadProgress(): Progress {
   try {
-    const text = require("fs").readFileSync(PROGRESS_FILE, "utf8");
-    return JSON.parse(text) as Progress;
+    const raw = JSON.parse(readFileSync(PROGRESS_FILE, "utf8"));
+    // Validate shape — reject old format (completedCategories) or corrupt data
+    if (!Array.isArray(raw.completedQueries) || typeof raw.totalFetched !== "number") {
+      throw new Error("invalid shape");
+    }
+    return raw as Progress;
   } catch {
     return {
-      completedCategories: [],
-      currentCategory: null,
+      completedQueries: [],
+      currentQuery: null,
       currentPage: 1,
       totalFetched: 0,
       totalNew: 0,
@@ -240,30 +315,53 @@ function loadProgress(): Progress {
 }
 
 function saveProgress(progress: Progress): void {
-  require("fs").writeFileSync(PROGRESS_FILE, JSON.stringify(progress, null, 2));
+  writeFileSync(PROGRESS_FILE, JSON.stringify(progress, null, 2));
+}
+
+function isQueryDone(progress: Progress, key: string): boolean {
+  return progress.completedQueries.includes(key);
+}
+
+function getResumeInfo(progress: Progress, key: string): { startPage: number } | null {
+  if (progress.currentQuery === key && progress.currentPage > 1) {
+    return { startPage: progress.currentPage };
+  }
+  return null;
+}
+
+// ── Graceful shutdown ──
+
+let stopping = false;
+
+async function cleanup(sql: ReturnType<typeof postgres>, progress: Progress) {
+  console.log("\n  Rebuilding search vectors for inserted parts...");
+  await rebuildSearchVectors(sql);
+  await enableSearchTrigger(sql);
+  saveProgress(progress);
+  console.log(`  Progress saved. Resume with: bun run ingest/src/jlcpcb-api.ts`);
+  await sql.end();
 }
 
 // ── Main ──
 
 async function main() {
-  const isResume = process.argv.includes("--resume");
+  const isFresh = process.argv.includes("--fresh");
 
-  const sql = postgres(DATABASE_URL, { max: 10 });
+  const sql = postgres(DATABASE_URL, { max: 10, onnotice: () => {} });
   await applySchema(sql);
+  await recoverFromCrash(sql);
 
-  // Count existing parts
   const [existing] = await sql`SELECT COUNT(*) AS cnt FROM parts`;
   const existingCount = Number(existing?.cnt ?? 0);
   console.log(`Existing parts in DB: ${existingCount.toLocaleString()}`);
 
-  // Disable search trigger for bulk performance
-  await sql`ALTER TABLE parts DISABLE TRIGGER trg_parts_search_vec`;
+  await disableSearchTrigger(sql);
 
   let progress = loadProgress();
-  if (!isResume) {
+  if (isFresh) {
     progress = {
-      completedCategories: [],
-      currentCategory: null,
+      completedQueries: [],
+      currentQuery: null,
       currentPage: 1,
       totalFetched: 0,
       totalNew: 0,
@@ -271,124 +369,139 @@ async function main() {
     };
   }
 
-  console.log(`\nStarting JLCPCB API ingestion (${CATEGORIES.length} categories)...`);
-  if (isResume && progress.completedCategories.length > 0) {
-    console.log(
-      `  Resuming: ${progress.completedCategories.length} categories already done, ${progress.totalFetched.toLocaleString()} parts fetched`,
-    );
+  // Trap SIGINT for graceful stop
+  process.on("SIGINT", () => {
+    if (stopping) {
+      console.log("\n  Force quit.");
+      process.exit(1);
+    }
+    stopping = true;
+    console.log("\n  Stopping after current batch... (Ctrl+C again to force quit)");
+  });
+
+  // Build work queue (probes API for totals, discovers subcategories)
+  console.log("\nBuilding work queue (probing API for category sizes)...\n");
+  const allQueries = await buildWorkQueue();
+
+  const pendingQueries = allQueries.filter((q) => !isQueryDone(progress, q.key));
+  const doneCount = allQueries.length - pendingQueries.length;
+
+  const isResuming = doneCount > 0 || progress.currentQuery != null;
+  console.log(`\nWork queue: ${allQueries.length} queries — ${doneCount} done, ${pendingQueries.length} pending`);
+  if (isResuming) {
+    console.log(`  Resuming: ${progress.totalFetched.toLocaleString()} parts fetched previously`);
   }
 
-  const pendingCategories = CATEGORIES.filter(
-    (c) => !progress.completedCategories.includes(c),
-  );
+  for (const query of pendingQueries) {
+    if (stopping) break;
 
-  for (const category of pendingCategories) {
-    let startPage = 1;
-    if (progress.currentCategory === category && progress.currentPage > 1) {
-      startPage = progress.currentPage;
-      console.log(`\n[${category}] Resuming from page ${startPage}...`);
-    } else {
-      progress.currentCategory = category;
-      progress.currentPage = 1;
+    const resumeInfo = getResumeInfo(progress, query.key);
+    const startPage = resumeInfo?.startPage ?? 1;
+
+    if (startPage > 1) {
+      console.log(`\n[${query.label}] Resuming from page ${startPage}...`);
     }
 
-    const firstResult = await fetchPage(category, startPage);
+    progress.currentQuery = query.key;
+    progress.currentPage = startPage;
+
+    const firstResult = await fetchPage(query.params, startPage);
     if (!firstResult || firstResult.parts.length === 0) {
-      console.log(`[${category}] No results, skipping`);
-      progress.completedCategories.push(category);
-      progress.currentCategory = null;
+      console.log(`[${query.label}] No results, skipping`);
+      progress.completedQueries.push(query.key);
+      progress.currentQuery = null;
       saveProgress(progress);
       continue;
     }
 
     const totalParts = firstResult.total;
     const totalPages = Math.min(Math.ceil(totalParts / PAGE_SIZE), MAX_PAGES);
-    const cappedParts = Math.min(totalParts, MAX_PAGES * PAGE_SIZE);
-    const cappedNote = totalParts > cappedParts
+    const cappedParts = Math.min(totalParts, MAX_FETCHABLE);
+    const cappedNote = totalParts > MAX_FETCHABLE
       ? ` (capped from ${totalParts.toLocaleString()})`
       : "";
-    console.log(`\n[${category}] ${cappedParts.toLocaleString()}${cappedNote} parts, ${totalPages} pages`);
+    console.log(`\n[${query.label}] ${cappedParts.toLocaleString()}${cappedNote} parts, ${totalPages} pages`);
 
-    let batch: ReturnType<typeof convertPart>[] = [];
-    let categoryFetched = 0;
+    let batch: PartRow[] = [];
+    let queryFetched = 0;
 
-    const processBatch = async () => {
+    const flushBatch = async () => {
       if (batch.length === 0) return;
-      const inserted = await insertBatch(sql, batch);
-      progress.totalNew += inserted;
+      const stats = await bulkInsertParts(sql, batch);
+      progress.totalNew += stats.inserted;
       batch = [];
+      saveProgress(progress);
     };
 
     for (const part of firstResult.parts) {
       batch.push(convertPart(part));
-      categoryFetched++;
+      queryFetched++;
       progress.totalFetched++;
     }
 
     for (let page = startPage + 1; page <= totalPages; page++) {
-      if (batch.length >= BATCH_SIZE) await processBatch();
+      if (stopping) break;
+      if (batch.length >= BATCH_SIZE) await flushBatch();
 
       await Bun.sleep(DELAY_MS);
-      const result = await fetchPage(category, page);
+      const result = await fetchPage(query.params, page);
       if (!result || result.parts.length === 0) break;
 
       for (const part of result.parts) {
         batch.push(convertPart(part));
-        categoryFetched++;
+        queryFetched++;
         progress.totalFetched++;
       }
 
       progress.currentPage = page;
 
       if (page % 50 === 0) {
-        await processBatch();
-        saveProgress(progress);
         const pct = ((page / totalPages) * 100).toFixed(0);
         console.log(
-          `  Page ${page}/${totalPages} (${pct}%) — ${categoryFetched.toLocaleString()} parts this category, ${progress.totalFetched.toLocaleString()} total`,
+          `  Page ${page}/${totalPages} (${pct}%) — ${queryFetched.toLocaleString()} this query, ${progress.totalFetched.toLocaleString()} total`,
         );
       }
     }
 
-    await processBatch();
-    progress.completedCategories.push(category);
-    progress.currentCategory = null;
-    saveProgress(progress);
-    console.log(`  Done: ${categoryFetched.toLocaleString()} parts ingested from ${category}`);
+    await flushBatch();
+
+    if (!stopping) {
+      progress.completedQueries.push(query.key);
+      progress.currentQuery = null;
+      saveProgress(progress);
+      console.log(`  Done: ${queryFetched.toLocaleString()} parts from ${query.label}`);
+    }
+  }
+
+  if (stopping) {
+    console.log("\n=== Stopped by user ===");
+    console.log(`  Parts fetched so far: ${progress.totalFetched.toLocaleString()}`);
+    console.log(`  New parts inserted: ${progress.totalNew.toLocaleString()}`);
+    console.log(`  Queries completed: ${progress.completedQueries.length}/${allQueries.length}`);
+    await cleanup(sql, progress);
+    return;
   }
 
   // Rebuild search vectors and re-enable trigger
-  console.log("\nRebuilding search vectors...");
-  await sql`
-    UPDATE parts SET search_vec =
-      setweight(to_tsvector('simple', coalesce(lcsc, '')), 'A') ||
-      setweight(to_tsvector('simple', coalesce(mpn, '')), 'A') ||
-      setweight(to_tsvector('simple', coalesce(manufacturer, '')), 'B') ||
-      setweight(to_tsvector('simple', coalesce(description, '')), 'B') ||
-      setweight(to_tsvector('simple', coalesce(subcategory, '')), 'C') ||
-      setweight(to_tsvector('simple', coalesce(search_text, '')), 'C') ||
-      setweight(to_tsvector('simple', coalesce(package, '')), 'D')
-    WHERE search_vec IS NULL
-  `;
-  await sql`ALTER TABLE parts ENABLE TRIGGER trg_parts_search_vec`;
-  console.log("Search vectors rebuilt.");
+  await rebuildSearchVectors(sql);
+  await enableSearchTrigger(sql);
 
   // Final stats
   const [finalRow] = await sql`SELECT COUNT(*) AS cnt FROM parts`;
   const finalCount = Number(finalRow?.cnt ?? 0);
-  const newParts = finalCount - existingCount;
 
   console.log("\n=== JLCPCB API Ingestion Complete ===");
-  console.log(`  Categories processed: ${progress.completedCategories.length}`);
-  console.log(`  Parts fetched from API: ${progress.totalFetched.toLocaleString()}`);
-  console.log(`  Parts before: ${existingCount.toLocaleString()}`);
-  console.log(`  Parts after:  ${finalCount.toLocaleString()}`);
-  console.log(`  New parts added: ${newParts.toLocaleString()}`);
+  console.log(`  Queries processed:  ${progress.completedQueries.length}`);
+  console.log(`  Parts fetched:      ${progress.totalFetched.toLocaleString()}`);
+  console.log(`  New parts inserted: ${progress.totalNew.toLocaleString()}`);
+  console.log(`  Parts updated:      ${(progress.totalFetched - progress.totalNew).toLocaleString()}`);
+  console.log(`  Parts before:       ${existingCount.toLocaleString()}`);
+  console.log(`  Parts after:        ${finalCount.toLocaleString()}`);
   console.log(
-    `  Duration: ${((Date.now() - new Date(progress.startedAt).getTime()) / 1000 / 60).toFixed(1)} minutes`,
+    `  Duration:           ${((Date.now() - new Date(progress.startedAt).getTime()) / 1000 / 60).toFixed(1)} minutes`,
   );
 
-  require("fs").unlinkSync(PROGRESS_FILE);
+  try { unlinkSync(PROGRESS_FILE); } catch {}
   await sql.end();
 }
 

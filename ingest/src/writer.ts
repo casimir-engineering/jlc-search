@@ -10,11 +10,24 @@ const COLUMNS = [
   "part_type", "pcba_type", "attributes", "search_text",
 ] as const;
 
-/** Bulk upsert parts in chunks. Also inserts numeric attributes. */
-export async function bulkInsertParts(sql: Sql, parts: PartRow[]): Promise<void> {
+/** Deduplicate parts by LCSC within a batch — keep last occurrence. */
+function dedup(parts: PartRow[]): PartRow[] {
+  const map = new Map<string, PartRow>();
+  for (const p of parts) {
+    if (p.lcsc) map.set(p.lcsc, p);
+  }
+  return [...map.values()];
+}
+
+export interface UpsertStats { inserted: number; updated: number }
+
+/** Bulk upsert parts in chunks. Returns count of actual inserts vs updates. */
+export async function bulkInsertParts(sql: Sql, parts: PartRow[]): Promise<UpsertStats> {
+  const stats: UpsertStats = { inserted: 0, updated: 0 };
   const CHUNK = 1000;
+
   for (let i = 0; i < parts.length; i += CHUNK) {
-    const chunk = parts.slice(i, i + CHUNK);
+    const chunk = dedup(parts.slice(i, i + CHUNK));
     const rows = chunk.map((p) => ({
       lcsc: p.lcsc,
       mpn: p.mpn,
@@ -35,7 +48,8 @@ export async function bulkInsertParts(sql: Sql, parts: PartRow[]): Promise<void>
       search_text: p.search_text,
     }));
 
-    await sql`
+    // xmax = 0 means the row was freshly inserted (no prior version)
+    const result = await sql`
       INSERT INTO parts ${sql(rows, ...COLUMNS)}
       ON CONFLICT (lcsc) DO UPDATE SET
         mpn = EXCLUDED.mpn,
@@ -54,7 +68,12 @@ export async function bulkInsertParts(sql: Sql, parts: PartRow[]): Promise<void>
         pcba_type = EXCLUDED.pcba_type,
         attributes = EXCLUDED.attributes,
         search_text = EXCLUDED.search_text
+      RETURNING (xmax = 0) AS is_insert
     `;
+    for (const r of result) {
+      if (r.is_insert) stats.inserted++;
+      else stats.updated++;
+    }
 
     // Insert numeric attributes
     const lcscs = chunk.map((p) => p.lcsc).filter(Boolean);
@@ -70,7 +89,6 @@ export async function bulkInsertParts(sql: Sql, parts: PartRow[]): Promise<void>
       }
     }
     if (numRows.length > 0) {
-      // Insert in sub-chunks to avoid parameter limits
       const NUM_CHUNK = 5000;
       for (let j = 0; j < numRows.length; j += NUM_CHUNK) {
         const nc = numRows.slice(j, j + NUM_CHUNK);
@@ -78,25 +96,37 @@ export async function bulkInsertParts(sql: Sql, parts: PartRow[]): Promise<void>
       }
     }
   }
+  return stats;
 }
 
-/** Update only the stock column for a set of LCSC codes. */
+/** Batch-update stock using unnest for O(1)-query-per-chunk performance. */
 export async function bulkUpdateStock(sql: Sql, stockData: StockData): Promise<void> {
   const entries = Object.entries(stockData);
-  const CHUNK = 5000;
+  const CHUNK = 10000;
   for (let i = 0; i < entries.length; i += CHUNK) {
     const chunk = entries.slice(i, i + CHUNK);
-    // Use a temp values approach for batch update
-    const updates = chunk.map(([lcsc, stock]) => ({
-      lcsc: lcsc.toUpperCase().startsWith("C") ? lcsc.toUpperCase() : `C${lcsc}`.toUpperCase(),
-      stock,
-    }));
-    // Update each — postgres library handles batching
-    await sql.begin(async (tx) => {
-      for (const u of updates) {
-        await tx`UPDATE parts SET stock = ${u.stock} WHERE lcsc = ${u.lcsc}`;
-      }
-    });
+    const lcscs: string[] = [];
+    const stocks: number[] = [];
+    for (const [lcsc, stock] of chunk) {
+      lcscs.push(lcsc.toUpperCase().startsWith("C") ? lcsc.toUpperCase() : `C${lcsc}`.toUpperCase());
+      stocks.push(stock);
+    }
+    await sql`
+      UPDATE parts SET stock = v.stock
+      FROM unnest(${lcscs}::text[], ${stocks}::int[]) AS v(lcsc, stock)
+      WHERE parts.lcsc = v.lcsc
+    `;
+  }
+}
+
+/** Recover from a prior crash: rebuild any NULL search vectors and re-enable the trigger. */
+export async function recoverFromCrash(sql: Sql): Promise<void> {
+  const [{ cnt }] = await sql`SELECT COUNT(*) AS cnt FROM parts WHERE search_vec IS NULL`;
+  if (Number(cnt) > 0) {
+    console.log(`  Recovering from prior crash: ${Number(cnt).toLocaleString()} parts missing search vectors...`);
+    await rebuildSearchVectors(sql);
+    await enableSearchTrigger(sql);
+    console.log("  Recovery complete.");
   }
 }
 
@@ -105,7 +135,7 @@ export async function disableSearchTrigger(sql: Sql): Promise<void> {
   await sql`ALTER TABLE parts DISABLE TRIGGER trg_parts_search_vec`;
 }
 
-/** Re-enable search_vec trigger and rebuild all vectors. */
+/** Re-enable search_vec trigger. */
 export async function enableSearchTrigger(sql: Sql): Promise<void> {
   await sql`ALTER TABLE parts ENABLE TRIGGER trg_parts_search_vec`;
 }
