@@ -51,6 +51,14 @@ export function FilterBar({ filters, onChange }: Props) {
         <label className="toggle-label">
           <input
             type="checkbox"
+            checked={filters.matchAll}
+            onChange={(e) => onChange({ matchAll: e.target.checked })}
+          />
+          Match all terms
+        </label>
+        <label className="toggle-label">
+          <input
+            type="checkbox"
             checked={filters.fuzzy}
             onChange={(e) => onChange({ fuzzy: e.target.checked })}
           />

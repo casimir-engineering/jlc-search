@@ -35,4 +35,5 @@ export interface Filters {
   inStock: boolean;
   fuzzy: boolean;
   sort: SortOption;
+  matchAll: boolean;
 }

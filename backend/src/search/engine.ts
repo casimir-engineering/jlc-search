@@ -40,10 +40,8 @@ function applyBoost(results: (PartSummary & { score?: number })[], q: string): P
       else if (mpnLower === qLower) boost -= 800;
       else if (mpnLower.startsWith(qLower)) boost -= 400;
       else if (lcscLower.startsWith(qLower)) boost -= 300;
-      // Prefer Basic > Preferred > Extended
       if (r.part_type === "Basic") boost -= 50;
       else if (r.part_type === "Preferred") boost -= 25;
-      // Boost older/canonical parts: lower LCSC codes = more established parts
       const lcscNum = parseInt(r.lcsc.slice(1)) || 9999999;
       boost -= Math.max(0, 50 - Math.log10(lcscNum + 1) * 7);
       return { ...r, score: boost };
@@ -75,7 +73,6 @@ function rowToSummary(row: Record<string, unknown>): PartSummary {
 function parseUnitPrice(priceRaw: string): number {
   if (!priceRaw) return Infinity;
   const tiers = priceRaw.split(",");
-  // First tier is typically the 1-qty price
   const first = tiers[0];
   if (!first) return Infinity;
   const colonIdx = first.indexOf(":");
@@ -84,34 +81,35 @@ function parseUnitPrice(priceRaw: string): number {
   return isFinite(price) && price > 0 ? price : Infinity;
 }
 
+/** Get SQL ORDER BY clause for stock-based sorts, or null for relevance/price (app-layer) */
+function getSqlOrderBy(sort: string): string | null {
+  switch (sort) {
+    case "stock_desc": return "p.stock DESC";
+    case "stock_asc": return "p.stock ASC";
+    default: return null; // relevance uses BM25 score, price needs app-layer sort
+  }
+}
+
 function applySortToResults(
   results: (PartSummary & { score?: number })[],
   sort: string
 ): (PartSummary & { score?: number })[] {
   switch (sort) {
     case "price_asc":
-      return results.sort((a, b) => parseUnitPrice(a.price_raw) - parseUnitPrice(b.price_raw));
+      return [...results].sort((a, b) => parseUnitPrice(a.price_raw) - parseUnitPrice(b.price_raw));
     case "price_desc":
-      return results.sort((a, b) => parseUnitPrice(b.price_raw) - parseUnitPrice(a.price_raw));
+      return [...results].sort((a, b) => parseUnitPrice(b.price_raw) - parseUnitPrice(a.price_raw));
     case "stock_desc":
-      return results.sort((a, b) => b.stock - a.stock);
+      return [...results].sort((a, b) => b.stock - a.stock);
     case "stock_asc":
-      return results.sort((a, b) => a.stock - b.stock);
+      return [...results].sort((a, b) => a.stock - b.stock);
     default:
-      return results; // relevance — already sorted by BM25 + boost
+      return results;
   }
 }
 
-/**
- * Build a single AND-group condition for part_nums.
- * Returns SQL that selects LCSCs matching all filters in the group.
- */
 function buildAndGroupSql(group: RangeFilter[], values: unknown[]): string {
-  if (group.length === 1) {
-    const f = group[0];
-    return singleFilterSql(f, values);
-  }
-  // INTERSECT the individual filters
+  if (group.length === 1) return singleFilterSql(group[0], values);
   return group.map((f) => singleFilterSql(f, values)).join("\nINTERSECT\n");
 }
 
@@ -128,10 +126,6 @@ function singleFilterSql(f: RangeFilter, values: unknown[]): string {
   return `SELECT DISTINCT lcsc FROM part_nums WHERE unit = ? AND ${condition!}`;
 }
 
-/**
- * Materialize range filter results into a temp table for fast JOINs.
- * Returns the temp table name, or null if no filters.
- */
 function materializeRangeFilter(
   db: ReturnType<typeof getDb>,
   filterGroups: RangeFilter[][]
@@ -144,7 +138,6 @@ function materializeRangeFilter(
   if (filterGroups.length === 1) {
     sql = buildAndGroupSql(filterGroups[0], values);
   } else {
-    // UNION the OR groups
     sql = filterGroups.map((g) => buildAndGroupSql(g, values)).join("\nUNION\n");
   }
 
@@ -166,10 +159,15 @@ export function search(params: SearchParams): { results: PartSummary[]; total: n
 
   const filter = buildFilterClause(params);
   const parsed = parseQuery(trimmed);
-
-  // Materialize range filters into temp table
   const rfTable = materializeRangeFilter(db, parsed.filterGroups);
   const rfJoin = rfTable ? `JOIN ${rfTable} rf ON rf.lcsc = p.lcsc` : "";
+
+  // For non-relevance sorts, we need to fetch more from FTS and re-sort
+  const isRelevanceSort = params.sort === "relevance";
+  const sqlStockOrder = getSqlOrderBy(params.sort);
+  // For price sort, we fetch extra results and sort in app layer
+  const isPriceSort = params.sort === "price_asc" || params.sort === "price_desc";
+  const SORT_FETCH_MULTIPLIER = 10; // fetch 10x to get a good sort window
 
   try {
     // Path 1: Exact LCSC code lookup
@@ -184,26 +182,32 @@ export function search(params: SearchParams): { results: PartSummary[]; total: n
 
     // Path 0: Range-only query (no text tokens)
     if (!parsed.text && rfTable) {
-      const sqlOrder = params.sort === "stock_asc" ? "p.stock ASC"
-        : params.sort === "stock_desc" ? "p.stock DESC"
-        : "p.stock DESC";
-      const fetchLimit = limit + 1;
+      const orderBy = sqlStockOrder ?? "p.stock DESC";
+      const fetchLimit = isPriceSort ? limit * SORT_FETCH_MULTIPLIER : limit + 1;
+      const sqlOffset = isPriceSort ? 0 : offset;
       const rows = db.query<Record<string, unknown>, unknown[]>(`
         SELECT ${SELECT_COLS}
         FROM parts p
         ${rfJoin}
         WHERE 1=1
         ${filter.sql}
-        ORDER BY ${sqlOrder}
+        ORDER BY ${orderBy}
         LIMIT ? OFFSET ?
-      `).all(...filter.values, fetchLimit, offset);
+      `).all(...filter.values, fetchLimit, sqlOffset);
+
+      let results = rows.map((r) => ({ ...rowToSummary(r), score: 0 }));
+
+      if (isPriceSort) {
+        results = applySortToResults(results, params.sort);
+        const total = rows.length >= fetchLimit ? fetchLimit + 1 : rows.length;
+        return { results: results.slice(offset, offset + limit), total };
+      }
 
       const hasMore = rows.length > limit;
       const resultRows = hasMore ? rows.slice(0, limit) : rows;
-      let results = resultRows.map((r) => ({ ...rowToSummary(r), score: 0 }));
-      results = applySortToResults(results, params.sort);
+      results = resultRows.map((r) => ({ ...rowToSummary(r), score: 0 }));
       const total = hasMore ? offset + limit + 1 : offset + resultRows.length;
-      return { results: results.slice(0, limit), total };
+      return { results, total };
     }
 
     // Path 2: FTS5 BM25 search (with optional range filters)
@@ -216,6 +220,11 @@ export function search(params: SearchParams): { results: PartSummary[]; total: n
 
     const runFts = (matchQuery: string, fetchLimit = limit): { rows: Record<string, unknown>[]; cnt: number } => {
       try {
+        // For stock sorts, use SQL ORDER BY directly
+        // For relevance, use BM25 score
+        // For price, fetch by BM25 then re-sort in app layer
+        const orderBy = sqlStockOrder ?? "bm25(parts_fts, 10, 8, 3, 5, 2, 4, 3) ASC";
+
         const rows = db.query<Record<string, unknown>, unknown[]>(`
           SELECT ${SELECT_COLS},
             bm25(parts_fts, 10, 8, 3, 5, 2, 4, 3) AS score
@@ -224,13 +233,13 @@ export function search(params: SearchParams): { results: PartSummary[]; total: n
           ${rfJoin}
           WHERE parts_fts MATCH ?
           ${filter.sql}
-          ORDER BY score ASC
+          ORDER BY ${orderBy}
           LIMIT ? OFFSET ?
-        `).all(matchQuery, ...filter.values, fetchLimit, offset);
+        `).all(matchQuery, ...filter.values, fetchLimit, isPriceSort ? 0 : offset);
 
         // Skip expensive COUNT when range filters — estimate from results
         if (rfTable) {
-          const cnt = rows.length < fetchLimit ? offset + rows.length : offset + fetchLimit + 1;
+          const cnt = rows.length < fetchLimit ? rows.length : fetchLimit + 1;
           return { rows, cnt };
         }
 
@@ -249,28 +258,28 @@ export function search(params: SearchParams): { results: PartSummary[]; total: n
       }
     };
 
-    // Try strict AND first
-    let { rows, cnt } = runFts(ftsAndQuery);
+    // Determine fetch limit based on sort mode
+    const baseFetchLimit = isPriceSort ? limit * SORT_FETCH_MULTIPLIER : limit;
 
-    // If AND returns no results, use smart token dropping then OR as last resort.
-    const FALLBACK_FETCH = Math.max(300, limit * 15);
-    if (cnt === 0 && textQuery.includes(" ")) {
+    // Try strict AND first
+    let { rows, cnt } = runFts(ftsAndQuery, baseFetchLimit);
+
+    // If AND returns no results and strict mode is off, use fallbacks
+    const FALLBACK_FETCH = Math.max(300, baseFetchLimit * 3);
+    if (cnt === 0 && textQuery.includes(" ") && !params.matchAll) {
       const tokens = textQuery.split(/\s+/).filter(Boolean);
 
       if (tokens.length >= 2) {
         const tokMatchCounts = tokens.map((tok) => {
-          const q = `"${tok.replace(/"/g, '""')}"*`;
-          try { return { tok, cnt: db.query<{ cnt: number }, unknown[]>(`SELECT COUNT(*) AS cnt FROM parts_fts WHERE parts_fts MATCH ?`).get(q)?.cnt ?? 0 }; }
+          const tq = `"${tok.replace(/"/g, '""')}"*`;
+          try { return { tok, cnt: db.query<{ cnt: number }, unknown[]>(`SELECT COUNT(*) AS cnt FROM parts_fts WHERE parts_fts MATCH ?`).get(tq)?.cnt ?? 0 }; }
           catch { return { tok, cnt: 0 }; }
         });
         const matchingTokens = tokMatchCounts.filter((t) => t.cnt > 0).map((t) => t.tok);
 
         if (matchingTokens.length >= 2 && matchingTokens.length < tokens.length) {
           const result = runFts(buildFtsQuery(matchingTokens.join(" ")), FALLBACK_FETCH);
-          if (result.cnt > 0) {
-            rows = result.rows;
-            cnt = result.cnt;
-          }
+          if (result.cnt > 0) { rows = result.rows; cnt = result.cnt; }
         }
 
         if (cnt === 0) {
@@ -283,17 +292,13 @@ export function search(params: SearchParams): { results: PartSummary[]; total: n
             kept.delete(dropTok);
             const remaining = tryTokens.filter((t) => kept.has(t));
             const result = runFts(buildFtsQuery(remaining.join(" ")), FALLBACK_FETCH);
-            if (result.cnt > 0) {
-              rows = result.rows;
-              cnt = result.cnt;
-              break;
-            }
+            if (result.cnt > 0) { rows = result.rows; cnt = result.cnt; break; }
           }
         }
       }
 
       if (cnt === 0) {
-        const orResult = runFts(ftsOrQuery);
+        const orResult = runFts(ftsOrQuery, baseFetchLimit);
         rows = orResult.rows;
         cnt = orResult.cnt;
       }
@@ -301,14 +306,18 @@ export function search(params: SearchParams): { results: PartSummary[]; total: n
 
     total = cnt;
     ftsResults = rows.map((r) => ({ ...rowToSummary(r), score: r.score as number }));
-    if (params.sort === "relevance") {
+
+    if (isRelevanceSort) {
       ftsResults = applyBoost(ftsResults, textQuery);
-    } else {
+    } else if (isPriceSort) {
       ftsResults = applySortToResults(ftsResults, params.sort);
+      // Slice to the requested page from the sorted larger set
+      ftsResults = ftsResults.slice(offset, offset + limit);
     }
+    // Stock sorts are already ordered by SQL
 
     // Path 3: Fuzzy LIKE fallback
-    if (params.fuzzy && ftsResults.length < 5) {
+    if (params.fuzzy && ftsResults.length < 5 && !params.matchAll) {
       const tokens = textQuery.split(/\s+/).filter(Boolean);
       if (tokens.length > 0) {
         const likeClauses = tokens
@@ -339,7 +348,6 @@ export function search(params: SearchParams): { results: PartSummary[]; total: n
 
     return { results: ftsResults.slice(0, limit), total };
   } finally {
-    // Clean up temp table
     if (rfTable) {
       try { db.run(`DROP TABLE IF EXISTS ${rfTable}`); } catch {}
     }

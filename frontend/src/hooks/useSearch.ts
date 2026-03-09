@@ -34,6 +34,7 @@ export function useSearch() {
     inStock: false,
     fuzzy: false,
     sort: "relevance",
+    matchAll: false,
   });
 
   const setFilters = useCallback((update: Partial<Filters>) => {
