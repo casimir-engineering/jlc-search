@@ -12,6 +12,7 @@ interface Props {
   totalPages: number;
   pageSize: number;
   onPageChange: (page: number) => void;
+  showApiData: boolean;
 }
 
 function Pagination({ page, totalPages, onPageChange }: { page: number; totalPages: number; onPageChange: (p: number) => void }) {
@@ -60,7 +61,7 @@ function Pagination({ page, totalPages, onPageChange }: { page: number; totalPag
   );
 }
 
-export function ResultsList({ results, total, loading, error, query, tookMs, page, totalPages, pageSize, onPageChange }: Props) {
+export function ResultsList({ results, total, loading, error, query, tookMs, page, totalPages, pageSize, onPageChange, showApiData }: Props) {
   if (error) {
     return (
       <div className="results-message error">
@@ -78,7 +79,7 @@ export function ResultsList({ results, total, loading, error, query, tookMs, pag
           <li>Manufacturer part number — <code>RC0402JR-0710KL</code></li>
           <li>Keywords — <code>100nF 0402 ceramic</code></li>
           <li>Connector description — <code>1.25 picoblade horizontal smd</code></li>
-          <li>Range filters — <code>F:100n-&gt;1u V:&gt;25</code>, <code>Ohm:&lt;2m</code></li>
+          <li>Range filters — <code>F:100n-&gt;1u V:&gt;25</code>, <code>Ohm:&lt;2m</code>, <code>pads:4</code></li>
         </ul>
       </div>
     );
@@ -124,7 +125,7 @@ export function ResultsList({ results, total, loading, error, query, tookMs, pag
       <Pagination page={page} totalPages={totalPages} onPageChange={onPageChange} />
       <div className="results-list">
         {results.map((part) => (
-          <PartCard key={part.lcsc} part={part} />
+          <PartCard key={part.lcsc} part={part} showApiData={showApiData} />
         ))}
       </div>
       <Pagination page={page} totalPages={totalPages} onPageChange={onPageChange} />

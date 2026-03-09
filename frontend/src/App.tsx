@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useSearch } from "./hooks/useSearch.ts";
 import { SearchBar } from "./components/SearchBar.tsx";
 import { FilterBar } from "./components/FilterBar.tsx";
@@ -10,6 +11,7 @@ export function App() {
     results, total, loading, error, tookMs,
     page, setPage, totalPages, pageSize,
   } = useSearch();
+  const [showApiData, setShowApiData] = useState(false);
 
   const hasResults = results.length > 0 || query.trim().length > 0;
 
@@ -22,7 +24,7 @@ export function App() {
         </div>
 
         <SearchBar value={query} onChange={setQuery} loading={loading} />
-        <FilterBar filters={filters} onChange={setFilters} />
+        <FilterBar filters={filters} onChange={setFilters} showApiData={showApiData} onShowApiDataChange={setShowApiData} />
       </header>
 
       <main className="app-main">
@@ -37,6 +39,7 @@ export function App() {
           totalPages={totalPages}
           pageSize={pageSize}
           onPageChange={setPage}
+          showApiData={showApiData}
         />
       </main>
 

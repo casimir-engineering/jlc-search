@@ -126,6 +126,38 @@ function singleFilterSql(f: RangeFilter, values: unknown[]): string {
   return `SELECT DISTINCT lcsc FROM part_nums WHERE unit = ? AND ${condition!}`;
 }
 
+/** Build SQL WHERE clause for column-based filters like pins:2 */
+function buildColumnFilterClause(filterGroups: RangeFilter[][]): { sql: string; values: unknown[] } {
+  const allPins: RangeFilter[] = [];
+  for (const group of filterGroups) {
+    for (const f of group) {
+      if (f.unit === "_pads") allPins.push(f);
+    }
+  }
+  if (allPins.length === 0) return { sql: "", values: [] };
+
+  const clauses: string[] = [];
+  const values: unknown[] = [];
+  for (const f of allPins) {
+    switch (f.op) {
+      case "gt":    clauses.push("p.joints > ?"); values.push(f.value); break;
+      case "gte":   clauses.push("p.joints >= ?"); values.push(f.value); break;
+      case "lt":    clauses.push("p.joints < ?"); values.push(f.value); break;
+      case "lte":   clauses.push("p.joints <= ?"); values.push(f.value); break;
+      case "eq":    clauses.push("p.joints = ?"); values.push(f.value); break;
+      case "between": clauses.push("p.joints BETWEEN ? AND ?"); values.push(f.min, f.max); break;
+    }
+  }
+  return { sql: "AND " + clauses.join(" AND "), values };
+}
+
+/** Strip _pads filters from groups, returning only part_nums-based filters */
+function stripColumnFilters(filterGroups: RangeFilter[][]): RangeFilter[][] {
+  return filterGroups
+    .map((g) => g.filter((f) => f.unit !== "_pads"))
+    .filter((g) => g.length > 0);
+}
+
 function materializeRangeFilter(
   db: ReturnType<typeof getDb>,
   filterGroups: RangeFilter[][]
@@ -159,8 +191,14 @@ export function search(params: SearchParams): { results: PartSummary[]; total: n
 
   const filter = buildFilterClause(params);
   const parsed = parseQuery(trimmed);
-  const rfTable = materializeRangeFilter(db, parsed.filterGroups);
+  const colFilter = buildColumnFilterClause(parsed.filterGroups);
+  // Merge column filters into the main filter clause
+  filter.sql += " " + colFilter.sql;
+  filter.values.push(...colFilter.values);
+  const numericGroups = stripColumnFilters(parsed.filterGroups);
+  const rfTable = materializeRangeFilter(db, numericGroups);
   const rfJoin = rfTable ? `JOIN ${rfTable} rf ON rf.lcsc = p.lcsc` : "";
+  const hasAnyFilter = rfTable || colFilter.sql;
 
   // For non-relevance sorts, we need to fetch more from FTS and re-sort
   const isRelevanceSort = params.sort === "relevance";
@@ -171,7 +209,7 @@ export function search(params: SearchParams): { results: PartSummary[]; total: n
 
   try {
     // Path 1: Exact LCSC code lookup
-    if (!rfTable && detectLcscCode(parsed.text || trimmed)) {
+    if (!hasAnyFilter && detectLcscCode(parsed.text || trimmed)) {
       const code = (parsed.text || trimmed).toUpperCase();
       const row = db.query<Record<string, unknown>, unknown[]>(
         `SELECT ${SELECT_COLS} FROM parts p ${rfJoin} WHERE p.lcsc = ? ${filter.sql} LIMIT 1`
@@ -180,8 +218,8 @@ export function search(params: SearchParams): { results: PartSummary[]; total: n
       if (row) return { results: [rowToSummary(row)], total: 1 };
     }
 
-    // Path 0: Range-only query (no text tokens)
-    if (!parsed.text && rfTable) {
+    // Path 0: Filter-only query (no text tokens, but has range or column filters)
+    if (!parsed.text && hasAnyFilter) {
       const orderBy = sqlStockOrder ?? "p.stock DESC";
       const fetchLimit = isPriceSort ? limit * SORT_FETCH_MULTIPLIER : limit + 1;
       const sqlOffset = isPriceSort ? 0 : offset;
@@ -236,12 +274,6 @@ export function search(params: SearchParams): { results: PartSummary[]; total: n
           ORDER BY ${orderBy}
           LIMIT ? OFFSET ?
         `).all(matchQuery, ...filter.values, fetchLimit, isPriceSort ? 0 : offset);
-
-        // Skip expensive COUNT when range filters — estimate from results
-        if (rfTable) {
-          const cnt = rows.length < fetchLimit ? rows.length : fetchLimit + 1;
-          return { rows, cnt };
-        }
 
         const countRow = db.query<{ cnt: number }, unknown[]>(`
           SELECT COUNT(*) AS cnt

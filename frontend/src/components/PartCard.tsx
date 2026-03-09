@@ -5,6 +5,7 @@ import { PriceTable } from "./PriceTable.tsx";
 
 interface Props {
   part: PartSummary;
+  showApiData: boolean;
 }
 
 const PART_TYPE_CLASS: Record<string, string> = {
@@ -28,17 +29,37 @@ function translatePackage(pkg: string): string {
   return pkg;
 }
 
+function highlightJson(obj: unknown): string {
+  const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return JSON.stringify(obj, null, 2).replace(
+    /("(?:\\.|[^"\\])*")\s*(:)?|(\b(?:true|false|null)\b)|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g,
+    (match, str?: string, colon?: string, bool?: string, num?: string) => {
+      if (str) {
+        const escaped = esc(str);
+        return colon
+          ? `<span class="json-key">${escaped}</span>:`
+          : `<span class="json-str">${escaped}</span>`;
+      }
+      if (bool) return `<span class="json-bool">${esc(bool)}</span>`;
+      if (num) return `<span class="json-num">${esc(num)}</span>`;
+      return esc(match);
+    }
+  );
+}
+
 const POPUP_SIZE = 390;
 const POPUP_GAP = 12;
 
-export function PartCard({ part }: Props) {
-  const [imgSrc, setImgSrc] = useState(part.lcsc ? `/api/img/${part.lcsc}` : null);
-  const [imgFailed, setImgFailed] = useState(false);
-  const [imgKey, setImgKey] = useState(0);
-  const [popupPos, setPopupPos] = useState<{ x: number; y: number } | null>(null);
+export function PartCard({ part, showApiData }: Props) {
+  const [photoSrc] = useState(part.lcsc ? `/api/img/${part.lcsc}` : null);
+  const [photoFailed, setPhotoFailed] = useState(false);
+  const [fpFailed, setFpFailed] = useState(false);
+  const [popupPos, setPopupPos] = useState<{ x: number; y: number; src: string } | null>(null);
   const [pcbaType, setPcbaType] = useState<string | null>(null);
   const [asmType, setAsmType] = useState<string | null>(null);
   const [richDesc, setRichDesc] = useState<string | null>(null);
+
+  const fpSrc = part.lcsc ? `/api/fp/${part.lcsc}?v=6` : null;
 
   useEffect(() => {
     if (!part.lcsc) return;
@@ -54,29 +75,21 @@ export function PartCard({ part }: Props) {
     return () => ac.abort();
   }, [part.lcsc]);
 
-  const handleImgError = () => {
-    if (imgSrc?.startsWith("/api/img/")) {
-      // Photo unavailable — show footprint immediately while backend fetches the real image
-      setImgSrc(`/api/fp/${part.lcsc}?v=6`);
-      setImgKey(k => k + 1);
-
-      // Probe for the real photo silently in the background after 4s
+  const handlePhotoError = () => {
+    setPhotoFailed(true);
+    // Probe for the real photo silently after 4s (backend may be fetching it)
+    if (photoSrc) {
       setTimeout(() => {
         const probe = new window.Image();
         probe.onload = () => {
-          setImgSrc(`/api/img/${part.lcsc}`);
-          setImgKey(k => k + 1);
+          setPhotoFailed(false);
         };
-        probe.src = `/api/img/${part.lcsc}`;
+        probe.src = photoSrc;
       }, 4000);
-    } else {
-      // Footprint also failed — show static placeholder
-      setImgFailed(true);
     }
   };
 
-  const handleMouseEnter = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (imgFailed || !imgSrc) return;
+  const handleMouseEnter = (e: React.MouseEvent<HTMLDivElement>, src: string) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const fitsLeft = rect.left >= POPUP_SIZE + POPUP_GAP;
     const x = fitsLeft
@@ -84,7 +97,7 @@ export function PartCard({ part }: Props) {
       : rect.right + POPUP_GAP;
     const rawY = rect.top + rect.height / 2 - POPUP_SIZE / 2;
     const y = Math.max(8, Math.min(window.innerHeight - POPUP_SIZE - 8, rawY));
-    setPopupPos({ x, y });
+    setPopupPos({ x, y, src });
   };
 
   const jlcUrl = `https://jlcpcb.com/partdetail/${part.lcsc}`;
@@ -92,34 +105,44 @@ export function PartCard({ part }: Props) {
 
   return (
     <div className="part-card">
-      <div
-        className="part-card-image"
-        onMouseEnter={handleMouseEnter}
-        onMouseLeave={() => setPopupPos(null)}
-      >
-        {imgFailed ? (
-          <div className="part-card-image-placeholder">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#ccc" strokeWidth="1.5">
-              <rect x="3" y="3" width="18" height="18" rx="2" />
-              <circle cx="8.5" cy="8.5" r="1.5" />
-              <polyline points="21 15 16 10 5 21" />
-            </svg>
+      <div className="part-card-images">
+        {photoSrc && !photoFailed && (
+          <div
+            className="part-card-image"
+            onMouseEnter={(e) => handleMouseEnter(e, photoSrc!)}
+            onMouseLeave={() => setPopupPos(null)}
+          >
+            <img
+              src={photoSrc}
+              alt={part.mpn}
+              loading="lazy"
+              onError={handlePhotoError}
+            />
           </div>
-        ) : imgSrc ? (
-          <img
-            key={imgKey}
-            src={imgSrc}
-            alt={part.mpn}
-            loading="lazy"
-            onError={handleImgError}
-          />
-        ) : (
-          <div className="part-card-image-placeholder">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#ccc" strokeWidth="1.5">
-              <rect x="3" y="3" width="18" height="18" rx="2" />
-              <circle cx="8.5" cy="8.5" r="1.5" />
-              <polyline points="21 15 16 10 5 21" />
-            </svg>
+        )}
+        {fpSrc && !fpFailed && (
+          <div
+            className="part-card-image part-card-fp"
+            onMouseEnter={(e) => handleMouseEnter(e, fpSrc)}
+            onMouseLeave={() => setPopupPos(null)}
+          >
+            <img
+              src={fpSrc}
+              alt={`${part.mpn} footprint`}
+              loading="lazy"
+              onError={() => setFpFailed(true)}
+            />
+          </div>
+        )}
+        {photoFailed && fpFailed && (
+          <div className="part-card-image">
+            <div className="part-card-image-placeholder">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#ccc" strokeWidth="1.5">
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+                <circle cx="8.5" cy="8.5" r="1.5" />
+                <polyline points="21 15 16 10 5 21" />
+              </svg>
+            </div>
           </div>
         )}
       </div>
@@ -164,7 +187,7 @@ export function PartCard({ part }: Props) {
           )}
           {part.joints != null && (
             <span className="part-joints">
-              <strong>Pins:</strong> {part.joints}
+              <strong>Pads:</strong> {part.joints}
             </span>
           )}
         </div>
@@ -201,12 +224,16 @@ export function PartCard({ part }: Props) {
         </div>
       </div>
 
-      {popupPos && imgSrc && createPortal(
+      {showApiData && (
+        <pre className="part-api-data" dangerouslySetInnerHTML={{ __html: highlightJson(part) }} />
+      )}
+
+      {popupPos && createPortal(
         <div
           className="img-popup"
           style={{ left: popupPos.x, top: popupPos.y }}
         >
-          <img src={imgSrc} alt={part.mpn} />
+          <img src={popupPos.src} alt={part.mpn} />
         </div>,
         document.body
       )}

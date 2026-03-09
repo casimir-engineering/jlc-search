@@ -57,7 +57,7 @@ export function bulkInsertParts(db: Database, parts: PartRow[]): void {
         );
         // Delete old numeric attrs for this part (INSERT OR REPLACE on parts may update)
         db.run("DELETE FROM part_nums WHERE lcsc = ?", [p.lcsc]);
-        const nums = extractNumericAttrs(p.attributes);
+        const nums = extractNumericAttrs(p.attributes, p.description);
         for (const { unit, value } of nums) {
           numStmt.run(p.lcsc, unit, value);
         }

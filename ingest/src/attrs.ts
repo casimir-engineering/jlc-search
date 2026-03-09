@@ -161,7 +161,30 @@ export interface NumericAttr {
  * Extract numeric attribute values with their units from attributes JSON.
  * Used to populate the part_nums table for range filtering.
  */
-export function extractNumericAttrs(attrsJson: string): NumericAttr[] {
+/**
+ * Extract numeric values with SI units from a free-text string (e.g. description).
+ * Finds patterns like "100mW", "3.4V", "30mA", "100nF" embedded in text.
+ */
+export function extractNumericFromText(text: string): NumericAttr[] {
+  if (!text) return [];
+  const results: NumericAttr[] = [];
+  const seen = new Set<string>();
+  // Match number + optional SI prefix + unit suffix, with word boundaries
+  const re = /(?<!\w)(-?\d+\.?\d*)(G|M|k|m|u|μ|n|p)?(V|Ohm|Hz|F|A|H|W)(?!\w)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    const num = parseFloat(m[1]);
+    if (!isFinite(num)) continue;
+    const mult = m[2] ? (SI_MULTIPLIERS[m[2]] ?? 1) : 1;
+    const value = num * mult;
+    const unit = m[3];
+    const k = `${unit}:${value}`;
+    if (!seen.has(k)) { results.push({ unit, value }); seen.add(k); }
+  }
+  return results;
+}
+
+export function extractNumericAttrs(attrsJson: string, description?: string): NumericAttr[] {
   let attrs: Record<string, unknown>;
   try {
     attrs = JSON.parse(attrsJson);
@@ -196,6 +219,14 @@ export function extractNumericAttrs(attrsJson: string): NumericAttr[] {
         const k = `${parsed.unit}:${parsed.value}`;
         if (!seen.has(k)) { results.push(parsed); seen.add(k); }
       }
+    }
+  }
+
+  // Path 3: Extract from description text (catches values not in structured attributes)
+  if (description) {
+    for (const { unit, value } of extractNumericFromText(description)) {
+      const k = `${unit}:${value}`;
+      if (!seen.has(k)) { results.push({ unit, value }); seen.add(k); }
     }
   }
 

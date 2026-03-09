@@ -13,9 +13,11 @@ const SORT_OPTIONS: { value: SortOption; label: string }[] = [
 interface Props {
   filters: Filters;
   onChange: (update: Partial<Filters>) => void;
+  showApiData: boolean;
+  onShowApiDataChange: (v: boolean) => void;
 }
 
-export function FilterBar({ filters, onChange }: Props) {
+export function FilterBar({ filters, onChange, showApiData, onShowApiDataChange }: Props) {
   function togglePartType(type: string) {
     const current = filters.partTypes;
     const next = current.includes(type)
@@ -63,6 +65,14 @@ export function FilterBar({ filters, onChange }: Props) {
             onChange={(e) => onChange({ fuzzy: e.target.checked })}
           />
           Fuzzy search
+        </label>
+        <label className="toggle-label">
+          <input
+            type="checkbox"
+            checked={showApiData}
+            onChange={(e) => onShowApiDataChange(e.target.checked)}
+          />
+          Show API data
         </label>
         <select
           className="sort-select"

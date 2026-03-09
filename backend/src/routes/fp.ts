@@ -113,6 +113,9 @@ function renderFootprintSvg(data: Record<string, unknown>): string | null {
   const byLayer: Record<number, string[]> = {};
   for (const l of RENDER_ORDER) byLayer[l] = [];
 
+  // Collect pad info for pin labels
+  const padLabels: { cx: number; cy: number; pin: string; w: number; h: number }[] = [];
+
   for (const shape of shapes) {
     const f = shape.split("~");
     const type = f[0];
@@ -128,6 +131,11 @@ function renderFootprintSvg(data: Record<string, unknown>): string | null {
       const w = parseFloat(f[4]), h = parseFloat(f[5]);
       const angle = parseFloat(f[9]) || 0;
       if (isNaN(cx)) continue;
+
+      const pin = f[8]?.trim();
+      if (pin && (layer === 1 || layer === 11)) {
+        padLabels.push({ cx, cy, pin, w, h });
+      }
 
       if (padShape === "OVAL") {
         // Stadium shape: rounded rect with radius = min(w,h)/2
@@ -223,7 +231,22 @@ function renderFootprintSvg(data: Record<string, unknown>): string | null {
   const elements = RENDER_ORDER.flatMap(l => byLayer[l] ?? []);
   if (elements.length === 0) return null;
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vx} ${vy} ${vw} ${vh}"><rect x="${vx}" y="${vy}" width="${vw}" height="${vh}" fill="white"/>${elements.join("")}</svg>`;
+  // Render pin labels on top of pads
+  const labels: string[] = [];
+  const minFontSize = Math.max(bw, bh) * 0.072;
+  for (const { cx, cy, pin, w, h } of padLabels) {
+    // For the text to fit inside the pad, constrain by both dimensions.
+    // Text aspect ratio ~0.6:1 (width:height per character), so fitW allows more height.
+    const textWidth = pin.length * 0.6; // approximate character count in em-widths
+    const fitByW = w * 0.765 / textWidth;
+    const fitByH = h * 0.63;
+    const fontSize = Math.max(Math.min(fitByW, fitByH), minFontSize);
+    labels.push(
+      `<text x="${cx}" y="${cy}" font-size="${fontSize.toFixed(2)}" fill="white" text-anchor="middle" dominant-baseline="central" font-family="sans-serif" font-weight="bold">${pin}</text>`
+    );
+  }
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vx} ${vy} ${vw} ${vh}"><rect x="${vx}" y="${vy}" width="${vw}" height="${vh}" fill="white"/>${elements.join("")}${labels.join("")}</svg>`;
 }
 
 fpRouter.get("/:lcsc", async (c) => {
@@ -253,7 +276,7 @@ fpRouter.get("/:lcsc", async (c) => {
         "Accept-Language": "en-US,en;q=0.9",
         "Referer": "https://easyeda.com/",
       },
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.timeout(30_000),
     });
 
     if (resp.ok) {

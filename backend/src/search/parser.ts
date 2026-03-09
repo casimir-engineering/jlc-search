@@ -64,6 +64,7 @@ const UNIT_ALIASES: Record<string, string> = {
   h: "H", henry: "H",
   w: "W", watt: "W", watts: "W",
   hz: "Hz", hertz: "Hz",
+  pads: "_pads", pad: "_pads",
 };
 
 function resolveUnit(raw: string): string | null {

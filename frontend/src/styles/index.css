@@ -259,10 +259,16 @@ code { font-family: monospace; background: #eee; padding: 1px 4px; border-radius
 
 @keyframes shimmer { to { background-position: -200% 0; } }
 
+.part-card-images {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
 .part-card-image {
   width: 72px;
   height: 72px;
-  flex-shrink: 0;
   border-radius: 6px;
   overflow: hidden;
   background: #f8f8f8;
@@ -270,6 +276,10 @@ code { font-family: monospace; background: #eee; padding: 1px 4px; border-radius
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.part-card-fp {
+  height: 56px;
 }
 
 .part-card-image img {
@@ -308,6 +318,27 @@ code { font-family: monospace; background: #eee; padding: 1px 4px; border-radius
   height: 100%;
   object-fit: contain;
 }
+
+.part-api-data {
+  flex-shrink: 0;
+  max-width: 320px;
+  max-height: 300px;
+  overflow: auto;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  background: #f7f7f7;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  padding: 0.6rem;
+  font-family: monospace;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: #333;
+}
+.part-api-data .json-key { color: #881391; }
+.part-api-data .json-str { color: #0451a5; }
+.part-api-data .json-num { color: #098658; }
+.part-api-data .json-bool { color: #d63200; }
 
 .part-card-body {
   flex: 1;
@@ -524,6 +555,8 @@ code { font-family: monospace; background: #eee; padding: 1px 4px; border-radius
   .app-home-mode .app-header { padding-top: 8vh; }
   .logo-text { font-size: 1.4rem; }
   .part-card { flex-direction: column; }
+  .part-card-images { flex-direction: row; }
   .part-card-image { width: 56px; height: 56px; }
+  .part-card-fp { height: 44px; }
   .price-tiers { gap: 0.3rem; }
 }

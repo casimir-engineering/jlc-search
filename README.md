@@ -42,7 +42,7 @@ Filter parts by numeric attribute values using `UNIT:OPERATOR_VALUE` syntax. SI 
 | `F:100n->1u` | Capacitance between 100nF and 1uF |
 | `W:>=0.25` | Power rating at least 250mW |
 
-**Supported units:** `V` (voltage), `Ohm` (resistance), `F` (capacitance), `A` (current), `H` (inductance), `W` (power), `Hz` (frequency)
+**Supported units:** `V` (voltage), `Ohm` (resistance), `F` (capacitance), `A` (current), `H` (inductance), `W` (power), `Hz` (frequency), `pads` (solder pad count)
 
 **Operators:** `>`, `>=`, `<`, `<=`, `=`, `min->max` (range)
 
@@ -55,6 +55,8 @@ Text and range filters can be freely mixed. Text tokens go to FTS5, range filter
 ```
 capacitor F:100n->1u V:>25    # MLCC capacitors, 100nF-1uF, >25V rated
 Ohm:10k->100k W:>0.25         # 10k-100k resistors, >250mW
+picoblade pads:4               # PicoBlade connectors with 4 solder pads
+connector pads:4->8            # Connectors with 4 to 8 solder pads
 ```
 
 ### Logical Operators

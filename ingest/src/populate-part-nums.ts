@@ -32,8 +32,8 @@ const totalRow = db.query<{ cnt: number }, []>("SELECT COUNT(*) AS cnt FROM part
 const total = totalRow?.cnt ?? 0;
 console.log(`Processing ${total} parts...`);
 
-const selectStmt = db.query<{ lcsc: string; attributes: string }, [number, number]>(
-  "SELECT lcsc, attributes FROM parts LIMIT ? OFFSET ?"
+const selectStmt = db.query<{ lcsc: string; attributes: string; description: string }, [number, number]>(
+  "SELECT lcsc, attributes, description FROM parts LIMIT ? OFFSET ?"
 );
 const insertStmt = db.prepare("INSERT INTO part_nums (lcsc, unit, value) VALUES (?, ?, ?)");
 
@@ -45,7 +45,7 @@ for (let offset = 0; offset < total; offset += BATCH) {
 
   db.transaction(() => {
     for (const row of rows) {
-      const nums = extractNumericAttrs(row.attributes);
+      const nums = extractNumericAttrs(row.attributes, row.description);
       for (const { unit, value } of nums) {
         insertStmt.run(row.lcsc, unit, value);
         inserted++;
