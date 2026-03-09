@@ -1,79 +1,91 @@
-export const SCHEMA_SQL = `
-PRAGMA journal_mode = WAL;
-PRAGMA synchronous = NORMAL;
-PRAGMA cache_size = -65536;
-PRAGMA temp_store = MEMORY;
+import type { Sql } from "postgres";
 
-CREATE TABLE IF NOT EXISTS parts (
-  lcsc         TEXT PRIMARY KEY NOT NULL,
-  mpn          TEXT NOT NULL DEFAULT '',
-  manufacturer TEXT,
-  category     TEXT NOT NULL DEFAULT '',
-  subcategory  TEXT NOT NULL DEFAULT '',
-  description  TEXT NOT NULL DEFAULT '',
-  datasheet    TEXT,
-  package      TEXT,
-  joints       INTEGER,
-  stock        INTEGER NOT NULL DEFAULT 0,
-  price_raw    TEXT NOT NULL DEFAULT '',
-  img          TEXT,
-  url          TEXT,
-  part_type    TEXT NOT NULL DEFAULT 'Extended',
-  pcba_type    TEXT NOT NULL DEFAULT 'Standard',
-  attributes   TEXT NOT NULL DEFAULT '{}',
-  search_text  TEXT NOT NULL DEFAULT ''
-);
+/** Apply the full PostgreSQL schema (idempotent). */
+export async function applySchema(sql: Sql): Promise<void> {
+  await sql`CREATE EXTENSION IF NOT EXISTS pg_trgm`;
 
-CREATE INDEX IF NOT EXISTS idx_parts_mpn   ON parts(mpn);
-CREATE INDEX IF NOT EXISTS idx_parts_type  ON parts(part_type);
-CREATE INDEX IF NOT EXISTS idx_parts_stock ON parts(stock);
-CREATE INDEX IF NOT EXISTS idx_parts_cat   ON parts(category, subcategory);
+  await sql`
+    CREATE TABLE IF NOT EXISTS parts (
+      lcsc         TEXT PRIMARY KEY,
+      mpn          TEXT NOT NULL DEFAULT '',
+      manufacturer TEXT,
+      category     TEXT NOT NULL DEFAULT '',
+      subcategory  TEXT NOT NULL DEFAULT '',
+      description  TEXT NOT NULL DEFAULT '',
+      datasheet    TEXT,
+      package      TEXT,
+      joints       INTEGER,
+      stock        INTEGER NOT NULL DEFAULT 0,
+      price_raw    TEXT NOT NULL DEFAULT '',
+      img          TEXT,
+      url          TEXT,
+      part_type    TEXT NOT NULL DEFAULT 'Extended',
+      pcba_type    TEXT NOT NULL DEFAULT 'Standard',
+      attributes   JSONB NOT NULL DEFAULT '{}',
+      search_text  TEXT NOT NULL DEFAULT '',
+      search_vec   tsvector
+    )
+  `;
 
-CREATE VIRTUAL TABLE IF NOT EXISTS parts_fts USING fts5(
-  lcsc,
-  mpn,
-  manufacturer,
-  description,
-  package,
-  subcategory,
-  search_text,
-  content='parts',
-  content_rowid='rowid',
-  tokenize='unicode61 tokenchars ''-'''
-);
+  // Indexes
+  await sql`CREATE INDEX IF NOT EXISTS idx_parts_search ON parts USING GIN(search_vec)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_parts_mpn_trgm ON parts USING GIN(mpn gin_trgm_ops)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_parts_mpn ON parts(mpn)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_parts_type ON parts(part_type)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_parts_stock ON parts(stock)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_parts_cat ON parts(category, subcategory)`;
 
-CREATE TRIGGER IF NOT EXISTS parts_ai AFTER INSERT ON parts BEGIN
-  INSERT INTO parts_fts(rowid, lcsc, mpn, manufacturer, description, package, subcategory, search_text)
-  VALUES (new.rowid, new.lcsc, new.mpn, new.manufacturer, new.description, new.package, new.subcategory, new.search_text);
-END;
+  // tsvector trigger function
+  await sql`
+    CREATE OR REPLACE FUNCTION update_search_vec() RETURNS trigger AS $$
+    BEGIN
+      NEW.search_vec :=
+        setweight(to_tsvector('simple', coalesce(NEW.lcsc, '')), 'A') ||
+        setweight(to_tsvector('simple', coalesce(NEW.mpn, '')), 'A') ||
+        setweight(to_tsvector('simple', coalesce(NEW.manufacturer, '')), 'B') ||
+        setweight(to_tsvector('simple', coalesce(NEW.description, '')), 'B') ||
+        setweight(to_tsvector('simple', coalesce(NEW.subcategory, '')), 'C') ||
+        setweight(to_tsvector('simple', coalesce(NEW.search_text, '')), 'C') ||
+        setweight(to_tsvector('simple', coalesce(NEW.package, '')), 'D');
+      RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql
+  `;
 
-CREATE TRIGGER IF NOT EXISTS parts_ad AFTER DELETE ON parts BEGIN
-  INSERT INTO parts_fts(parts_fts, rowid, lcsc, mpn, manufacturer, description, package, subcategory, search_text)
-  VALUES ('delete', old.rowid, old.lcsc, old.mpn, old.manufacturer, old.description, old.package, old.subcategory, old.search_text);
-END;
+  // Create trigger if not exists (use DO block)
+  await sql`
+    DO $$ BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger WHERE tgname = 'trg_parts_search_vec'
+      ) THEN
+        CREATE TRIGGER trg_parts_search_vec
+          BEFORE INSERT OR UPDATE ON parts
+          FOR EACH ROW EXECUTE FUNCTION update_search_vec();
+      END IF;
+    END $$
+  `;
 
-CREATE TRIGGER IF NOT EXISTS parts_au AFTER UPDATE ON parts BEGIN
-  INSERT INTO parts_fts(parts_fts, rowid, lcsc, mpn, manufacturer, description, package, subcategory, search_text)
-  VALUES ('delete', old.rowid, old.lcsc, old.mpn, old.manufacturer, old.description, old.package, old.subcategory, old.search_text);
-  INSERT INTO parts_fts(rowid, lcsc, mpn, manufacturer, description, package, subcategory, search_text)
-  VALUES (new.rowid, new.lcsc, new.mpn, new.manufacturer, new.description, new.package, new.subcategory, new.search_text);
-END;
+  // Numeric attributes table
+  await sql`
+    CREATE TABLE IF NOT EXISTS part_nums (
+      lcsc  TEXT NOT NULL REFERENCES parts(lcsc) ON DELETE CASCADE,
+      unit  TEXT NOT NULL,
+      value DOUBLE PRECISION NOT NULL
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS idx_pn_unit_value ON part_nums(unit, value)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_pn_lcsc ON part_nums(lcsc)`;
 
-CREATE TABLE IF NOT EXISTS part_nums (
-  lcsc  TEXT NOT NULL,
-  unit  TEXT NOT NULL,
-  value REAL NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_part_nums_unit_value ON part_nums(unit, value);
-CREATE INDEX IF NOT EXISTS idx_part_nums_lcsc ON part_nums(lcsc);
-
-CREATE TABLE IF NOT EXISTS ingest_meta (
-  category    TEXT NOT NULL,
-  subcategory TEXT NOT NULL,
-  sourcename  TEXT NOT NULL,
-  datahash    TEXT NOT NULL,
-  stockhash   TEXT NOT NULL,
-  ingested_at INTEGER NOT NULL,
-  PRIMARY KEY (category, subcategory)
-);
-`;
+  // Ingest metadata
+  await sql`
+    CREATE TABLE IF NOT EXISTS ingest_meta (
+      category    TEXT NOT NULL,
+      subcategory TEXT NOT NULL,
+      sourcename  TEXT NOT NULL,
+      datahash    TEXT NOT NULL,
+      stockhash   TEXT NOT NULL,
+      ingested_at BIGINT NOT NULL,
+      PRIMARY KEY (category, subcategory)
+    )
+  `;
+}

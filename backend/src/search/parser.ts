@@ -3,68 +3,83 @@ export function detectLcscCode(q: string): boolean {
   return /^c\d+$/i.test(q.trim());
 }
 
-/**
- * Build an FTS5 AND query: all tokens must match.
- * Every token gets a prefix wildcard so "1.25" matches "1.25mm",
- * "100nF" matches "100nF" exactly, etc.
- * Phrases are matched exactly (no wildcard). Negations use NOT.
- */
-export function buildFtsQuery(raw: string, phrases: string[] = [], negations: string[] = []): string {
-  const parts: string[] = [];
+// ── tsquery builders (PostgreSQL) ──────────────────────────────────────
 
-  const tokens = raw.trim().split(/\s+/).filter(Boolean);
-  for (const tok of tokens) {
-    parts.push(`"${tok.replace(/"/g, '""')}"*`);
-  }
-
-  for (const phrase of phrases) {
-    parts.push(`"${phrase.replace(/"/g, '""')}"`);
-  }
-
-  let result = parts.join(" ") || '""';
-
-  for (const neg of negations) {
-    result += ` NOT "${neg.replace(/"/g, '""')}"*`;
-  }
-
-  return result;
+/** Remove characters that are special in tsquery syntax. Keep dots/hyphens (simple dict preserves them). */
+function sanitize(tok: string): string {
+  return tok.replace(/[&|!():*<>'\\]/g, "").toLowerCase().trim();
 }
 
 /**
- * Build an FTS5 OR query: any token can match.
- * Useful fallback when AND returns no results.
- * Phrases and negations are still AND/NOT (they constrain the OR result).
+ * Convert a single search token into a tsquery expression fragment.
+ * The 'simple' dictionary preserves dots and hyphens in tokens
+ * (e.g. "1.25" stays as one token, "RC0402JR-07100KL" becomes both
+ * the full form and sub-tokens). So we keep the token as-is with :* prefix.
  */
-export function buildFtsOrQuery(raw: string, phrases: string[] = [], negations: string[] = []): string {
-  const parts: string[] = [];
+function tokenToTsExpr(tok: string): string {
+  const clean = sanitize(tok);
+  if (!clean) return "";
+  return `${clean}:*`;
+}
 
-  const tokens = raw.trim().split(/\s+/).filter(Boolean);
-  if (tokens.length > 0) {
-    const orPart = tokens
-      .map((tok, i) => {
-        const escaped = tok.replace(/"/g, '""');
-        return i === tokens.length - 1
-          ? `"${escaped}"*`
-          : `"${escaped}"`;
-      })
-      .join(" OR ");
-    parts.push(tokens.length > 1 ? `(${orPart})` : orPart);
+/**
+ * Build a PostgreSQL tsquery string (AND): all tokens must match.
+ * Result is passed to to_tsquery('simple', ...).
+ */
+export function buildTsQuery(text: string, phrases: string[] = []): string {
+  const exprs: string[] = [];
+
+  for (const tok of text.trim().split(/\s+/).filter(Boolean)) {
+    const e = tokenToTsExpr(tok);
+    if (e) exprs.push(e);
   }
 
   for (const phrase of phrases) {
-    parts.push(`"${phrase.replace(/"/g, '""')}"`);
+    const words = sanitize(phrase).split(/\s+/).filter(Boolean);
+    if (words.length > 0) exprs.push(`(${words.map(w => `${w}:*`).join(" <-> ")})`);
   }
 
-  let result = parts.join(" ") || '""';
-
-  for (const neg of negations) {
-    result += ` NOT "${neg.replace(/"/g, '""')}"*`;
-  }
-
-  return result;
+  return exprs.join(" & ") || "";
 }
 
-// ── Range filter parsing ──────────────────────────────────────────────
+/**
+ * Build a PostgreSQL tsquery string (OR): any token can match.
+ * Phrases are still AND-constrainted.
+ */
+export function buildTsOrQuery(text: string, phrases: string[] = []): string {
+  const tokenExprs: string[] = [];
+
+  for (const tok of text.trim().split(/\s+/).filter(Boolean)) {
+    const e = tokenToTsExpr(tok);
+    if (e) tokenExprs.push(e);
+  }
+
+  let result = "";
+  if (tokenExprs.length === 1) result = tokenExprs[0];
+  else if (tokenExprs.length > 1) result = `(${tokenExprs.join(" | ")})`;
+
+  // Phrases constrain (AND) the OR result
+  for (const phrase of phrases) {
+    const words = sanitize(phrase).split(/\s+/).filter(Boolean);
+    if (words.length > 0) {
+      const pe = `(${words.map(w => `${w}:*`).join(" <-> ")})`;
+      result = result ? `${result} & ${pe}` : pe;
+    }
+  }
+
+  return result || "";
+}
+
+/**
+ * Build a tsquery for negated terms (OR'd together).
+ * Used as: NOT search_vec @@ to_tsquery('simple', negQuery)
+ */
+export function buildNegationTsQuery(negations: string[]): string {
+  const exprs = negations.map(tokenToTsExpr).filter(Boolean);
+  return exprs.join(" | ");
+}
+
+// ── Range filter parsing (unchanged from SQLite version) ──────────────
 
 const SI_MULTIPLIERS: Record<string, number> = {
   G: 1e9, M: 1e6, k: 1e3,
@@ -94,7 +109,6 @@ const UNIT_ALIASES: Record<string, string> = {
 };
 
 function resolveUnit(raw: string): string | null {
-  // Exact match first (case-sensitive for V vs v ambiguity)
   if (["V", "Ohm", "F", "A", "H", "W", "Hz"].includes(raw)) return raw;
   return UNIT_ALIASES[raw.toLowerCase()] ?? null;
 }
@@ -102,22 +116,18 @@ function resolveUnit(raw: string): string | null {
 export interface RangeFilter {
   unit: string;
   op: "gt" | "gte" | "lt" | "lte" | "eq" | "between";
-  value: number;  // used for single-value ops
-  min: number;    // used for 'between'
-  max: number;    // used for 'between'
+  value: number;
+  min: number;
+  max: number;
 }
 
 export interface ParsedQuery {
-  text: string;                    // FTS text tokens
-  phrases: string[];               // exact phrase matches (from "...")
-  negations: string[];             // negated tokens/phrases (from -token)
-  filterGroups: RangeFilter[][];   // DNF: OR of AND-groups
+  text: string;
+  phrases: string[];
+  negations: string[];
+  filterGroups: RangeFilter[][];
 }
 
-/**
- * Parse a single range filter token like "V:>25", "Ohm:<2m", "F:100n->1u"
- * Returns null if it doesn't match the filter syntax.
- */
 function parseFilterToken(token: string): RangeFilter | null {
   const colonIdx = token.indexOf(":");
   if (colonIdx < 1) return null;
@@ -129,7 +139,6 @@ function parseFilterToken(token: string): RangeFilter | null {
   const expr = token.slice(colonIdx + 1);
   if (!expr) return null;
 
-  // Range: min->max
   const rangeMatch = expr.match(/^(-?\d+\.?\d*(?:[GMkmunp])?)->(-?\d+\.?\d*(?:[GMkmunp])?)$/);
   if (rangeMatch) {
     const min = parseSIValue(rangeMatch[1]);
@@ -139,7 +148,6 @@ function parseFilterToken(token: string): RangeFilter | null {
     }
   }
 
-  // Comparison: >=, <=, >, <, =
   const cmpMatch = expr.match(/^(>=|<=|>|<|=)(-?\d+\.?\d*(?:[GMkmunp])?)$/);
   if (cmpMatch) {
     const value = parseSIValue(cmpMatch[2]);
@@ -151,7 +159,6 @@ function parseFilterToken(token: string): RangeFilter | null {
     }
   }
 
-  // Bare value: exact match
   const bareValue = parseSIValue(expr);
   if (bareValue !== null) {
     return { unit, op: "eq", value: bareValue, min: 0, max: 0 };
@@ -160,23 +167,10 @@ function parseFilterToken(token: string): RangeFilter | null {
   return null;
 }
 
-/**
- * Parse a full query string into text tokens and range filter groups.
- *
- * Range filters use the syntax: UNIT:OP_VALUE or UNIT:MIN->MAX
- * Multiple filters default to AND; use | for OR between filters.
- *
- * Examples:
- *   "100nF X7R V:>25"         → text="100nF X7R", filters=[[V>25]]
- *   "V:-15->20"               → text="", filters=[[V:-15..20]]
- *   "Ohm:10k->100k W:>0.25"   → text="", filters=[[Ohm:10k..100k, W>0.25]]
- *   "Ohm:<2m | Ohm:>1M"       → text="", filters=[[Ohm<0.002], [Ohm>1e6]]
- */
 export function parseQuery(raw: string): ParsedQuery {
   const phrases: string[] = [];
   const negations: string[] = [];
 
-  // 1. Extract quoted phrases and negated phrases: "exact phrase", -"negated phrase"
   const withoutPhrases = raw.replace(/-?"([^"]+)"/g, (match, phrase) => {
     const trimmed = (phrase as string).trim();
     if (!trimmed) return " ";
@@ -188,30 +182,22 @@ export function parseQuery(raw: string): ParsedQuery {
     return " ";
   });
 
-  // 2. Split remaining into tokens
   const tokens = withoutPhrases.trim().split(/\s+/).filter(Boolean);
   const textTokens: string[] = [];
   const filterGroups: RangeFilter[][] = [[]];
 
-  for (let i = 0; i < tokens.length; i++) {
-    const tok = tokens[i];
-
-    // Handle logical operators
+  for (const tok of tokens) {
     if (tok === "|") {
-      if (filterGroups[filterGroups.length - 1].length > 0) {
-        filterGroups.push([]);
-      }
+      if (filterGroups[filterGroups.length - 1].length > 0) filterGroups.push([]);
       continue;
     }
     if (tok === "&") continue;
 
-    // Negation: -token
     if (tok.startsWith("-") && tok.length > 1) {
       negations.push(tok.slice(1));
       continue;
     }
 
-    // Try parsing as range filter
     const filter = parseFilterToken(tok);
     if (filter) {
       filterGroups[filterGroups.length - 1].push(filter);
@@ -220,7 +206,6 @@ export function parseQuery(raw: string): ParsedQuery {
     }
   }
 
-  // Clean up empty trailing group
   if (filterGroups[filterGroups.length - 1].length === 0 && filterGroups.length > 1) {
     filterGroups.pop();
   }
@@ -231,58 +216,4 @@ export function parseQuery(raw: string): ParsedQuery {
     negations,
     filterGroups: filterGroups.filter((g) => g.length > 0),
   };
-}
-
-/**
- * Build SQL WHERE clause and params for range filter groups (DNF).
- * Returns empty string if no filters.
- */
-export function buildFilterSql(filterGroups: RangeFilter[][]): { sql: string; values: unknown[] } {
-  if (filterGroups.length === 0) return { sql: "", values: [] };
-
-  const values: unknown[] = [];
-  const orClauses: string[] = [];
-
-  for (const group of filterGroups) {
-    const andClauses: string[] = [];
-    for (const f of group) {
-      let condition: string;
-      switch (f.op) {
-        case "gt":
-          condition = "pn.value > ?";
-          values.push(f.unit, f.value);
-          break;
-        case "gte":
-          condition = "pn.value >= ?";
-          values.push(f.unit, f.value);
-          break;
-        case "lt":
-          condition = "pn.value < ?";
-          values.push(f.unit, f.value);
-          break;
-        case "lte":
-          condition = "pn.value <= ?";
-          values.push(f.unit, f.value);
-          break;
-        case "eq":
-          condition = "pn.value = ?";
-          values.push(f.unit, f.value);
-          break;
-        case "between":
-          condition = "pn.value BETWEEN ? AND ?";
-          values.push(f.unit, f.min, f.max);
-          break;
-      }
-      andClauses.push(
-        `EXISTS (SELECT 1 FROM part_nums pn WHERE pn.lcsc = p.lcsc AND pn.unit = ? AND ${condition!})`
-      );
-    }
-    orClauses.push(andClauses.length === 1 ? andClauses[0] : `(${andClauses.join(" AND ")})`);
-  }
-
-  const sql = orClauses.length === 1
-    ? `AND ${orClauses[0]}`
-    : `AND (${orClauses.join(" OR ")})`;
-
-  return { sql, values };
 }

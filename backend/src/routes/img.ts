@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { join } from "path";
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "fs";
-import { getDb } from "../db.ts";
+import { getSql } from "../db.ts";
 
 export const imgRouter = new Hono();
 
@@ -53,11 +53,10 @@ function markNoImg(lcsc: string): void {
 }
 
 /** Look up the img filename from the DB (fast path — no HTML scraping needed). */
-function getImgFilename(lcsc: string): string | null {
-  const row = getDb().query<{ img: string | null }, [string]>(
-    "SELECT img FROM parts WHERE lcsc = ?"
-  ).get(lcsc);
-  return row?.img ?? null;
+async function getImgFilename(lcsc: string): Promise<string | null> {
+  const sql = getSql();
+  const rows = await sql`SELECT img FROM parts WHERE lcsc = ${lcsc}`;
+  return (rows[0]?.img as string) ?? null;
 }
 
 /** Fetch image from LCSC in the background and cache it to disk. */
@@ -67,7 +66,7 @@ async function downloadImage(lcsc: string): Promise<void> {
   let succeeded = false;
   try {
     // Try DB img field first — direct CDN URL, no HTML scraping needed
-    const imgFilename = getImgFilename(lcsc);
+    const imgFilename = await getImgFilename(lcsc);
     let cdnUrl: string | null = null;
 
     if (imgFilename) {

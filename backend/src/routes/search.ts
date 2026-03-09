@@ -4,7 +4,7 @@ import type { SearchResponse } from "../types.ts";
 
 export const searchRouter = new Hono();
 
-searchRouter.get("/", (c) => {
+searchRouter.get("/", async (c) => {
   const q = c.req.query("q") ?? "";
   const partType = c.req.queries("partType") ?? [];
   const inStock = c.req.query("inStock") === "true";
@@ -22,8 +22,12 @@ searchRouter.get("/", (c) => {
   }
 
   const start = performance.now();
-  const { results, total } = search({ q, partTypes: partType, inStock, fuzzy, limit, offset, sort, matchAll });
-  const took_ms = Math.round(performance.now() - start);
-
-  return c.json<SearchResponse>({ results, total, took_ms, query: q });
+  try {
+    const { results, total } = await search({ q, partTypes: partType, inStock, fuzzy, limit, offset, sort, matchAll });
+    const took_ms = Math.round(performance.now() - start);
+    return c.json<SearchResponse>({ results, total, took_ms, query: q });
+  } catch (err) {
+    console.error("Search route error:", err);
+    return c.json<SearchResponse>({ results: [], total: 0, took_ms: Math.round(performance.now() - start), query: q });
+  }
 });

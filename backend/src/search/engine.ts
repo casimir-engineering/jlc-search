@@ -1,5 +1,8 @@
-import { getDb } from "../db.ts";
-import { buildFtsQuery, buildFtsOrQuery, detectLcscCode, parseQuery, type RangeFilter } from "./parser.ts";
+import { getSql } from "../db.ts";
+import {
+  buildTsQuery, buildTsOrQuery, buildNegationTsQuery,
+  detectLcscCode, parseQuery, type RangeFilter,
+} from "./parser.ts";
 import type { PartSummary, SearchParams } from "../types.ts";
 
 const SELECT_COLS = `
@@ -8,72 +11,31 @@ const SELECT_COLS = `
   p.category, p.subcategory, p.datasheet
 `;
 
+const TS_WEIGHTS = "{0.1, 0.2, 0.4, 1.0}"; // D, C, B, A
 
-function buildFilterClause(params: SearchParams): { sql: string; values: unknown[] } {
-  const clauses: string[] = [];
-  const values: unknown[] = [];
-
-  if (params.partTypes.length > 0) {
-    const placeholders = params.partTypes.map(() => "?").join(",");
-    clauses.push(`p.part_type IN (${placeholders})`);
-    values.push(...params.partTypes);
-  }
-
-  if (params.inStock) {
-    clauses.push("p.stock > 0");
-  }
-
-  return {
-    sql: clauses.length > 0 ? "AND " + clauses.join(" AND ") : "",
-    values,
-  };
-}
-
-function applyBoost(results: (PartSummary & { score?: number })[], q: string): PartSummary[] {
+function applyBoost(results: (PartSummary & { score: number })[], q: string): (PartSummary & { score: number })[] {
   const qLower = q.toLowerCase().trim();
   return results
     .map((r) => {
-      let boost = r.score ?? 0;
+      let boost = r.score;
       const lcscLower = r.lcsc.toLowerCase();
       const mpnLower = r.mpn.toLowerCase();
-      if (lcscLower === qLower) boost -= 1000;
-      else if (mpnLower === qLower) boost -= 800;
-      else if (mpnLower.startsWith(qLower)) boost -= 400;
-      else if (lcscLower.startsWith(qLower)) boost -= 300;
-      if (r.part_type === "Basic") boost -= 50;
-      else if (r.part_type === "Preferred") boost -= 25;
+      if (lcscLower === qLower) boost += 1000;
+      else if (mpnLower === qLower) boost += 800;
+      else if (mpnLower.startsWith(qLower)) boost += 400;
+      else if (lcscLower.startsWith(qLower)) boost += 300;
+      if (r.part_type === "Basic") boost += 50;
+      else if (r.part_type === "Preferred") boost += 25;
       const lcscNum = parseInt(r.lcsc.slice(1)) || 9999999;
-      boost -= Math.max(0, 50 - Math.log10(lcscNum + 1) * 7);
+      boost += Math.max(0, 50 - Math.log10(lcscNum + 1) * 7);
       return { ...r, score: boost };
     })
-    .sort((a, b) => (a.score ?? 0) - (b.score ?? 0));
+    .sort((a, b) => b.score - a.score); // higher = better
 }
 
-function rowToSummary(row: Record<string, unknown>): PartSummary {
-  return {
-    lcsc: row.lcsc as string,
-    mpn: row.mpn as string,
-    manufacturer: row.manufacturer as string | null,
-    description: row.description as string,
-    package: row.package as string | null,
-    joints: row.joints as number | null,
-    stock: row.stock as number,
-    price_raw: row.price_raw as string,
-    img: row.img as string | null,
-    url: row.url as string | null,
-    part_type: row.part_type as string,
-    pcba_type: row.pcba_type as string,
-    category: row.category as string,
-    subcategory: row.subcategory as string,
-    datasheet: row.datasheet as string | null,
-  };
-}
-
-/** Extract lowest unit price from price_raw string like "1-9:0.005,10-99:0.004,..." */
 function parseUnitPrice(priceRaw: string): number {
   if (!priceRaw) return Infinity;
-  const tiers = priceRaw.split(",");
-  const first = tiers[0];
+  const first = priceRaw.split(",")[0];
   if (!first) return Infinity;
   const colonIdx = first.indexOf(":");
   if (colonIdx < 0) return Infinity;
@@ -81,19 +43,10 @@ function parseUnitPrice(priceRaw: string): number {
   return isFinite(price) && price > 0 ? price : Infinity;
 }
 
-/** Get SQL ORDER BY clause for stock-based sorts, or null for relevance/price (app-layer) */
-function getSqlOrderBy(sort: string): string | null {
-  switch (sort) {
-    case "stock_desc": return "p.stock DESC";
-    case "stock_asc": return "p.stock ASC";
-    default: return null; // relevance uses BM25 score, price needs app-layer sort
-  }
-}
-
 function applySortToResults(
-  results: (PartSummary & { score?: number })[],
-  sort: string
-): (PartSummary & { score?: number })[] {
+  results: (PartSummary & { score: number })[],
+  sort: string,
+): (PartSummary & { score: number })[] {
   switch (sort) {
     case "price_asc":
       return [...results].sort((a, b) => parseUnitPrice(a.price_raw) - parseUnitPrice(b.price_raw));
@@ -108,296 +61,269 @@ function applySortToResults(
   }
 }
 
-function buildAndGroupSql(group: RangeFilter[], values: unknown[]): string {
-  if (group.length === 1) return singleFilterSql(group[0], values);
-  return group.map((f) => singleFilterSql(f, values)).join("\nINTERSECT\n");
-}
+// ── Dynamic SQL fragment builders ────────────────────────────────────
 
-function singleFilterSql(f: RangeFilter, values: unknown[]): string {
-  let condition: string;
+function buildRangeExistsFragment(sql: ReturnType<typeof getSql>, f: RangeFilter) {
   switch (f.op) {
-    case "gt":    condition = "value > ?"; values.push(f.unit, f.value); break;
-    case "gte":   condition = "value >= ?"; values.push(f.unit, f.value); break;
-    case "lt":    condition = "value < ?"; values.push(f.unit, f.value); break;
-    case "lte":   condition = "value <= ?"; values.push(f.unit, f.value); break;
-    case "eq":    condition = "value = ?"; values.push(f.unit, f.value); break;
-    case "between": condition = "value BETWEEN ? AND ?"; values.push(f.unit, f.min, f.max); break;
+    case "gt":      return sql`EXISTS (SELECT 1 FROM part_nums pn WHERE pn.lcsc = p.lcsc AND pn.unit = ${f.unit} AND pn.value > ${f.value})`;
+    case "gte":     return sql`EXISTS (SELECT 1 FROM part_nums pn WHERE pn.lcsc = p.lcsc AND pn.unit = ${f.unit} AND pn.value >= ${f.value})`;
+    case "lt":      return sql`EXISTS (SELECT 1 FROM part_nums pn WHERE pn.lcsc = p.lcsc AND pn.unit = ${f.unit} AND pn.value < ${f.value})`;
+    case "lte":     return sql`EXISTS (SELECT 1 FROM part_nums pn WHERE pn.lcsc = p.lcsc AND pn.unit = ${f.unit} AND pn.value <= ${f.value})`;
+    case "eq":      return sql`EXISTS (SELECT 1 FROM part_nums pn WHERE pn.lcsc = p.lcsc AND pn.unit = ${f.unit} AND pn.value = ${f.value})`;
+    case "between": return sql`EXISTS (SELECT 1 FROM part_nums pn WHERE pn.lcsc = p.lcsc AND pn.unit = ${f.unit} AND pn.value BETWEEN ${f.min} AND ${f.max})`;
   }
-  return `SELECT DISTINCT lcsc FROM part_nums WHERE unit = ? AND ${condition!}`;
 }
 
-/** Build SQL WHERE clause for column-based filters like pins:2 */
-function buildColumnFilterClause(filterGroups: RangeFilter[][]): { sql: string; values: unknown[] } {
-  const allPins: RangeFilter[] = [];
-  for (const group of filterGroups) {
-    for (const f of group) {
-      if (f.unit === "_pads") allPins.push(f);
-    }
-  }
-  if (allPins.length === 0) return { sql: "", values: [] };
-
-  const clauses: string[] = [];
-  const values: unknown[] = [];
-  for (const f of allPins) {
+function buildColumnFilter(sql: ReturnType<typeof getSql>, filterGroups: RangeFilter[][]) {
+  const pads: RangeFilter[] = [];
+  for (const g of filterGroups) for (const f of g) if (f.unit === "_pads") pads.push(f);
+  if (pads.length === 0) return sql``;
+  const parts = pads.map((f) => {
     switch (f.op) {
-      case "gt":    clauses.push("p.joints > ?"); values.push(f.value); break;
-      case "gte":   clauses.push("p.joints >= ?"); values.push(f.value); break;
-      case "lt":    clauses.push("p.joints < ?"); values.push(f.value); break;
-      case "lte":   clauses.push("p.joints <= ?"); values.push(f.value); break;
-      case "eq":    clauses.push("p.joints = ?"); values.push(f.value); break;
-      case "between": clauses.push("p.joints BETWEEN ? AND ?"); values.push(f.min, f.max); break;
+      case "gt":      return sql`p.joints > ${f.value}`;
+      case "gte":     return sql`p.joints >= ${f.value}`;
+      case "lt":      return sql`p.joints < ${f.value}`;
+      case "lte":     return sql`p.joints <= ${f.value}`;
+      case "eq":      return sql`p.joints = ${f.value}`;
+      case "between": return sql`p.joints BETWEEN ${f.min} AND ${f.max}`;
     }
-  }
-  return { sql: "AND " + clauses.join(" AND "), values };
+  });
+  return parts.reduce((a, b) => sql`${a} AND ${b}`);
 }
 
-/** Strip _pads filters from groups, returning only part_nums-based filters */
 function stripColumnFilters(filterGroups: RangeFilter[][]): RangeFilter[][] {
-  return filterGroups
-    .map((g) => g.filter((f) => f.unit !== "_pads"))
-    .filter((g) => g.length > 0);
+  return filterGroups.map((g) => g.filter((f) => f.unit !== "_pads")).filter((g) => g.length > 0);
 }
 
-function materializeRangeFilter(
-  db: ReturnType<typeof getDb>,
-  filterGroups: RangeFilter[][]
-): string | null {
-  if (filterGroups.length === 0) return null;
-
-  const values: unknown[] = [];
-  let sql: string;
-
-  if (filterGroups.length === 1) {
-    sql = buildAndGroupSql(filterGroups[0], values);
-  } else {
-    sql = filterGroups.map((g) => buildAndGroupSql(g, values)).join("\nUNION\n");
-  }
-
-  db.run("DROP TABLE IF EXISTS _range_filter");
-  db.run(`CREATE TEMP TABLE _range_filter AS ${sql}`, values);
-  db.run("CREATE INDEX IF NOT EXISTS _rf_idx ON _range_filter(lcsc)");
-
-  return "_range_filter";
+function buildRangeFilter(sql: ReturnType<typeof getSql>, filterGroups: RangeFilter[][]) {
+  if (filterGroups.length === 0) return sql``;
+  const orParts = filterGroups.map((group) => {
+    const andParts = group.map((f) => buildRangeExistsFragment(sql, f));
+    return andParts.reduce((a, b) => sql`${a} AND ${b}`);
+  });
+  if (orParts.length === 1) return orParts[0];
+  return orParts.reduce((a, b) => sql`(${a}) OR (${b})`);
 }
 
-export function search(params: SearchParams): { results: PartSummary[]; total: number } {
-  const db = getDb();
+// ── Main search function ─────────────────────────────────────────────
+
+export async function search(params: SearchParams): Promise<{ results: PartSummary[]; total: number }> {
+  const sql = getSql();
   const { q, limit, offset } = params;
   const trimmed = q.trim();
 
-  if (trimmed.length === 0) {
-    return { results: [], total: 0 };
-  }
+  if (trimmed.length === 0) return { results: [], total: 0 };
 
-  const filter = buildFilterClause(params);
   const parsed = parseQuery(trimmed);
-  const colFilter = buildColumnFilterClause(parsed.filterGroups);
-  // Merge column filters into the main filter clause
-  filter.sql += " " + colFilter.sql;
-  filter.values.push(...colFilter.values);
+  const hasTextContent = parsed.text || parsed.phrases.length > 0;
   const numericGroups = stripColumnFilters(parsed.filterGroups);
-  const rfTable = materializeRangeFilter(db, numericGroups);
-  const rfJoin = rfTable ? `JOIN ${rfTable} rf ON rf.lcsc = p.lcsc` : "";
-  const hasAnyFilter = rfTable || colFilter.sql;
+  const hasRangeFilter = numericGroups.length > 0;
+  const colFilterFrag = buildColumnFilter(sql, parsed.filterGroups);
+  const hasColFilter = parsed.filterGroups.some((g) => g.some((f) => f.unit === "_pads"));
+  const hasAnyFilter = hasRangeFilter || hasColFilter;
 
-  // Build SQL exclusion clauses for negated tokens (works in all paths)
-  if (parsed.negations.length > 0) {
-    for (const neg of parsed.negations) {
-      const ftsNeg = `"${neg.replace(/"/g, '""')}"*`;
-      filter.sql += ` AND p.rowid NOT IN (SELECT rowid FROM parts_fts WHERE parts_fts MATCH ?)`;
-      filter.values.push(ftsNeg);
+  // Build shared filter fragments
+  const typeFilter = params.partTypes.length > 0
+    ? sql`AND p.part_type IN ${sql(params.partTypes)}`
+    : sql``;
+  const stockFilter = params.inStock ? sql`AND p.stock > 0` : sql``;
+  const colFilter = hasColFilter ? sql`AND ${colFilterFrag}` : sql``;
+  const rangeFilter = hasRangeFilter ? sql`AND ${buildRangeFilter(sql, numericGroups)}` : sql``;
+  const negQuery = buildNegationTsQuery(parsed.negations);
+  const negFilter = negQuery
+    ? sql`AND NOT p.search_vec @@ to_tsquery('simple', ${negQuery})`
+    : sql``;
+
+  const isRelevanceSort = params.sort === "relevance";
+  const isPriceSort = params.sort === "price_asc" || params.sort === "price_desc";
+  const RERANK_LIMIT = 300;
+
+  // Path 1: Exact LCSC lookup
+  if (!hasAnyFilter && !parsed.phrases.length && !parsed.negations.length && detectLcscCode(parsed.text || trimmed)) {
+    const code = (parsed.text || trimmed).toUpperCase();
+    const rows = await sql.unsafe(
+      `SELECT ${SELECT_COLS} FROM parts p WHERE p.lcsc = $1 LIMIT 1`,
+      [code],
+    );
+    if (rows.length > 0) {
+      return { results: [rows[0] as unknown as PartSummary], total: 1 };
     }
   }
 
-  const hasTextContent = parsed.text || parsed.phrases.length > 0;
+  // Path 0: Filter-only (no text, has range/column filters)
+  if (!hasTextContent && hasAnyFilter) {
+    const orderFrag = params.sort === "stock_asc" ? sql`p.stock ASC`
+      : params.sort === "stock_desc" ? sql`p.stock DESC`
+      : sql`p.stock DESC`;
+    const fetchLimit = isPriceSort ? limit * 10 : limit + 1;
+    const sqlOffset = isPriceSort ? 0 : offset;
 
-  // For non-relevance sorts, we need to fetch more from FTS and re-sort
-  const isRelevanceSort = params.sort === "relevance";
-  const sqlStockOrder = getSqlOrderBy(params.sort);
-  // For price sort, we fetch extra results and sort in app layer
-  const isPriceSort = params.sort === "price_asc" || params.sort === "price_desc";
-  const SORT_FETCH_MULTIPLIER = 10; // fetch 10x to get a good sort window
+    const rows = await sql`
+      SELECT ${sql.unsafe(SELECT_COLS)}
+      FROM parts p
+      WHERE TRUE
+      ${rangeFilter} ${colFilter} ${typeFilter} ${stockFilter} ${negFilter}
+      ORDER BY ${orderFrag}
+      LIMIT ${fetchLimit} OFFSET ${sqlOffset}
+    `;
+
+    let results = rows.map((r) => ({ ...(r as unknown as PartSummary), score: 0 }));
+
+    if (isPriceSort) {
+      results = applySortToResults(results, params.sort);
+      const total = rows.length >= fetchLimit ? fetchLimit + 1 : rows.length;
+      return { results: results.slice(offset, offset + limit), total };
+    }
+
+    const hasMore = rows.length > limit;
+    const total = hasMore ? offset + limit + 1 : offset + rows.length;
+    return { results: results.slice(0, limit), total };
+  }
+
+  if (!hasTextContent) return { results: [], total: 0 };
+
+  // Path 2: Full-text search
+  const textQuery = parsed.text;
+  const andQ = buildTsQuery(textQuery, parsed.phrases);
+  const orQ = buildTsOrQuery(textQuery, parsed.phrases);
+
+  if (!andQ && !orQ) return { results: [], total: 0 };
+
+  const isMultiToken = !params.matchAll && textQuery.includes(" ");
+
+  // Build ORDER BY based on sort mode
+  const orderByRank = params.sort === "stock_asc" ? sql`p.stock ASC`
+    : params.sort === "stock_desc" ? sql`p.stock DESC`
+    : sql`rank DESC`;
+
+  let fetchLimit: number;
+  let fetchOffset: number;
+
+  if (isRelevanceSort) {
+    fetchLimit = RERANK_LIMIT;
+    fetchOffset = 0;
+  } else if (isPriceSort) {
+    fetchLimit = limit * 10;
+    fetchOffset = 0;
+  } else {
+    fetchLimit = limit + 1; // +1 to detect hasMore
+    fetchOffset = offset;
+  }
 
   try {
-    // Path 1: Exact LCSC code lookup
-    if (!hasAnyFilter && !parsed.phrases.length && !parsed.negations.length && detectLcscCode(parsed.text || trimmed)) {
-      const code = (parsed.text || trimmed).toUpperCase();
-      const row = db.query<Record<string, unknown>, unknown[]>(
-        `SELECT ${SELECT_COLS} FROM parts p ${rfJoin} WHERE p.lcsc = ? ${filter.sql} LIMIT 1`
-      ).get(code, ...filter.values);
+    let rows: Record<string, unknown>[];
+    let total: number;
 
-      if (row) return { results: [rowToSummary(row)], total: 1 };
-    }
+    // Always try AND query first — it's fast and precise
+    const andRows = await sql`
+      SELECT ${sql.unsafe(SELECT_COLS)},
+        ts_rank_cd(${sql.unsafe(`'${TS_WEIGHTS}'`)}, p.search_vec, to_tsquery('simple', ${andQ})) AS rank
+      FROM parts p
+      WHERE p.search_vec @@ to_tsquery('simple', ${andQ})
+      ${rangeFilter} ${colFilter} ${typeFilter} ${stockFilter} ${negFilter}
+      ORDER BY ${orderByRank}
+      LIMIT ${fetchLimit} OFFSET ${fetchOffset}
+    `;
 
-    // Path 0: Filter-only query (no text tokens or phrases, but has range or column filters)
-    if (!hasTextContent && hasAnyFilter) {
-      const orderBy = sqlStockOrder ?? "p.stock DESC";
-      const fetchLimit = isPriceSort ? limit * SORT_FETCH_MULTIPLIER : limit + 1;
-      const sqlOffset = isPriceSort ? 0 : offset;
-      const rows = db.query<Record<string, unknown>, unknown[]>(`
-        SELECT ${SELECT_COLS}
-        FROM parts p
-        ${rfJoin}
-        WHERE 1=1
-        ${filter.sql}
-        ORDER BY ${orderBy}
-        LIMIT ? OFFSET ?
-      `).all(...filter.values, fetchLimit, sqlOffset);
-
-      let results = rows.map((r) => ({ ...rowToSummary(r), score: 0 }));
-
-      if (isPriceSort) {
-        results = applySortToResults(results, params.sort);
-        const total = rows.length >= fetchLimit ? fetchLimit + 1 : rows.length;
-        return { results: results.slice(offset, offset + limit), total };
+    if (!isMultiToken || andRows.length >= fetchLimit) {
+      // AND query has enough results — use it directly
+      rows = andRows;
+      // Estimate total: if we got a full page, there's likely more
+      if (rows.length >= fetchLimit) {
+        const countRows = await sql`
+          SELECT COUNT(*) AS cnt FROM parts p
+          WHERE p.search_vec @@ to_tsquery('simple', ${andQ})
+          ${rangeFilter} ${colFilter} ${typeFilter} ${stockFilter} ${negFilter}
+        `;
+        total = Number(countRows[0]?.cnt ?? 0);
+      } else {
+        total = fetchOffset + rows.length;
       }
+    } else {
+      // AND returned few results — supplement with N-1 token AND queries
+      // This is much faster than OR-all which scans huge result sets
+      const tokens = textQuery.trim().split(/\s+/).filter(Boolean);
+      const andSeen = new Set(andRows.map((r) => r.lcsc as string));
+      const tier1Rows: Record<string, unknown>[] = [];
+      const needed = fetchLimit - andRows.length;
 
-      const hasMore = rows.length > limit;
-      const resultRows = hasMore ? rows.slice(0, limit) : rows;
-      results = resultRows.map((r) => ({ ...rowToSummary(r), score: 0 }));
-      const total = hasMore ? offset + limit + 1 : offset + resultRows.length;
-      return { results, total };
-    }
-
-    // If no positive text content at all, nothing to search for
-    if (!hasTextContent) {
-      return { results: [], total: 0 };
-    }
-
-    // Path 2: FTS5 BM25 search (with optional range filters)
-    const textQuery = parsed.text;
-    const ftsAndQuery = buildFtsQuery(textQuery, parsed.phrases);
-    const ftsOrQuery = buildFtsOrQuery(textQuery, parsed.phrases);
-
-    let ftsResults: (PartSummary & { score?: number })[] = [];
-    let total = 0;
-
-    const runFts = (matchQuery: string, fetchLimit = limit): { rows: Record<string, unknown>[]; cnt: number } => {
-      try {
-        // For stock sorts, use SQL ORDER BY directly
-        // For relevance, use BM25 score
-        // For price, fetch by BM25 then re-sort in app layer
-        const orderBy = sqlStockOrder ?? "bm25(parts_fts, 10, 8, 3, 5, 2, 4, 3) ASC";
-
-        const rows = db.query<Record<string, unknown>, unknown[]>(`
-          SELECT ${SELECT_COLS},
-            bm25(parts_fts, 10, 8, 3, 5, 2, 4, 3) AS score
-          FROM parts_fts
-          JOIN parts p ON p.rowid = parts_fts.rowid
-          ${rfJoin}
-          WHERE parts_fts MATCH ?
-          ${filter.sql}
-          ORDER BY ${orderBy}
-          LIMIT ? OFFSET ?
-        `).all(matchQuery, ...filter.values, fetchLimit, isPriceSort ? 0 : offset);
-
-        const countRow = db.query<{ cnt: number }, unknown[]>(`
-          SELECT COUNT(*) AS cnt
-          FROM parts_fts
-          JOIN parts p ON p.rowid = parts_fts.rowid
-          ${rfJoin}
-          WHERE parts_fts MATCH ?
-          ${filter.sql}
-        `).get(matchQuery, ...filter.values);
-
-        return { rows, cnt: countRow?.cnt ?? 0 };
-      } catch {
-        return { rows: [], cnt: 0 };
-      }
-    };
-
-    // Determine fetch limit based on sort mode
-    const baseFetchLimit = isPriceSort ? limit * SORT_FETCH_MULTIPLIER : limit;
-
-    // Try strict AND first
-    let { rows, cnt } = runFts(ftsAndQuery, baseFetchLimit);
-
-    // If AND returns no results and strict mode is off, use fallbacks
-    const FALLBACK_FETCH = Math.max(300, baseFetchLimit * 3);
-    if (cnt === 0 && textQuery.includes(" ") && !params.matchAll) {
-      const tokens = textQuery.split(/\s+/).filter(Boolean);
-
-      if (tokens.length >= 2) {
-        const tokMatchCounts = tokens.map((tok) => {
-          const tq = `"${tok.replace(/"/g, '""')}"*`;
-          try { return { tok, cnt: db.query<{ cnt: number }, unknown[]>(`SELECT COUNT(*) AS cnt FROM parts_fts WHERE parts_fts MATCH ?`).get(tq)?.cnt ?? 0 }; }
-          catch { return { tok, cnt: 0 }; }
-        });
-        const matchingTokens = tokMatchCounts.filter((t) => t.cnt > 0).map((t) => t.tok);
-
-        if (matchingTokens.length >= 2 && matchingTokens.length < tokens.length) {
-          const result = runFts(buildFtsQuery(matchingTokens.join(" "), parsed.phrases), FALLBACK_FETCH);
-          if (result.cnt > 0) { rows = result.rows; cnt = result.cnt; }
-        }
-
-        if (cnt === 0) {
-          const tryTokens = matchingTokens.length >= 2 ? matchingTokens : tokens;
-          const sortedByLength = [...tryTokens].sort((a, b) => b.length - a.length);
-          const kept = new Set(tryTokens);
-
-          for (const dropTok of sortedByLength) {
-            if (kept.size < 2) break;
-            kept.delete(dropTok);
-            const remaining = tryTokens.filter((t) => kept.has(t));
-            const result = runFts(buildFtsQuery(remaining.join(" "), parsed.phrases), FALLBACK_FETCH);
-            if (result.cnt > 0) { rows = result.rows; cnt = result.cnt; break; }
+      if (tokens.length >= 2 && needed > 0) {
+        // Try dropping one token at a time, shortest first
+        const sorted = [...tokens].sort((a, b) => a.length - b.length);
+        for (const drop of sorted) {
+          if (tier1Rows.length >= needed) break;
+          const remaining = tokens.filter((t) => t !== drop);
+          const subQ = buildTsQuery(remaining.join(" "), parsed.phrases);
+          if (!subQ || subQ === andQ) continue;
+          const subRows = await sql`
+            SELECT ${sql.unsafe(SELECT_COLS)},
+              ts_rank_cd(${sql.unsafe(`'${TS_WEIGHTS}'`)}, p.search_vec, to_tsquery('simple', ${subQ})) AS rank
+            FROM parts p
+            WHERE p.search_vec @@ to_tsquery('simple', ${subQ})
+              AND NOT p.search_vec @@ to_tsquery('simple', ${andQ})
+            ${rangeFilter} ${colFilter} ${typeFilter} ${stockFilter} ${negFilter}
+            ORDER BY ${orderByRank}
+            LIMIT ${needed - tier1Rows.length}
+          `;
+          for (const r of subRows) {
+            if (!andSeen.has(r.lcsc as string)) {
+              tier1Rows.push(r);
+              andSeen.add(r.lcsc as string);
+            }
           }
         }
       }
 
-      if (cnt === 0) {
-        const orResult = runFts(ftsOrQuery, baseFetchLimit);
-        rows = orResult.rows;
-        cnt = orResult.cnt;
-      }
+      const andWithTier = andRows.map((r) => ({ ...r, tier: 0 }));
+      const orWithTier = tier1Rows.map((r) => ({ ...r, tier: 1 }));
+      rows = [...andWithTier, ...orWithTier];
+      total = rows.length;
     }
 
-    total = cnt;
-    ftsResults = rows.map((r) => ({ ...rowToSummary(r), score: r.score as number }));
+    // Map to summaries
+    let results: (PartSummary & { score: number })[] = rows.map((r) => ({
+      ...(r as unknown as PartSummary),
+      score: Number((r as Record<string, unknown>).rank ?? 0)
+        + ((r as Record<string, unknown>).tier === 0 ? 1000 : 0),
+    }));
 
     if (isRelevanceSort) {
-      ftsResults = applyBoost(ftsResults, textQuery);
+      results = applyBoost(results, textQuery).slice(offset, offset + limit);
     } else if (isPriceSort) {
-      ftsResults = applySortToResults(ftsResults, params.sort);
-      // Slice to the requested page from the sorted larger set
-      ftsResults = ftsResults.slice(offset, offset + limit);
+      results = applySortToResults(results, params.sort).slice(offset, offset + limit);
+    } else {
+      // Trim the +1 we added for hasMore detection
+      const hasMore = results.length > limit;
+      if (hasMore) total = Math.max(total, offset + limit + 1);
+      results = results.slice(0, limit);
     }
-    // Stock sorts are already ordered by SQL
 
-    // Path 3: Fuzzy LIKE fallback
-    if (params.fuzzy && ftsResults.length < 5 && !params.matchAll) {
+    // Path 3: Fuzzy fallback with trigram similarity
+    if (params.fuzzy && results.length < 5 && !params.matchAll) {
       const tokens = textQuery.split(/\s+/).filter(Boolean);
       if (tokens.length > 0) {
-        const likeClauses = tokens
-          .map(() => "(p.description LIKE ? OR p.mpn LIKE ? OR p.lcsc LIKE ?)")
-          .join(" AND ");
-        const likeValues = tokens.flatMap((t) => [`%${t}%`, `%${t}%`, `%${t}%`]);
-
-        const fuzzyRows = db.query<Record<string, unknown>, unknown[]>(`
-          SELECT ${SELECT_COLS}
+        const pattern = `%${tokens.join("%")}%`;
+        const fuzzyRows = await sql`
+          SELECT ${sql.unsafe(SELECT_COLS)}
           FROM parts p
-          ${rfJoin}
-          WHERE ${likeClauses}
-          ${filter.sql}
-          LIMIT ?
-        `).all(...likeValues, ...filter.values, limit);
-
-        const fuzzyResults = fuzzyRows.map(rowToSummary);
-        const seen = new Set(ftsResults.map((r) => r.lcsc));
-        for (const r of fuzzyResults) {
-          if (!seen.has(r.lcsc)) {
-            ftsResults.push(r);
-            seen.add(r.lcsc);
+          WHERE (p.mpn ILIKE ${pattern} OR p.description ILIKE ${pattern})
+          ${rangeFilter} ${colFilter} ${typeFilter} ${stockFilter} ${negFilter}
+          LIMIT ${limit}
+        `;
+        const seen = new Set(results.map((r) => r.lcsc));
+        for (const r of fuzzyRows) {
+          if (!seen.has(r.lcsc as string)) {
+            results.push({ ...(r as unknown as PartSummary), score: 0 });
+            seen.add(r.lcsc as string);
           }
         }
-        total = Math.max(total, ftsResults.length);
+        total = Math.max(total, results.length);
       }
     }
 
-    return { results: ftsResults.slice(0, limit), total };
-  } finally {
-    if (rfTable) {
-      try { db.run(`DROP TABLE IF EXISTS ${rfTable}`); } catch {}
-    }
+    return { results: results.slice(0, limit), total };
+  } catch (err) {
+    console.error("Search error:", err);
+    return { results: [], total: 0 };
   }
 }

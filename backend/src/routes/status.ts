@@ -1,39 +1,22 @@
 import { Hono } from "hono";
-import { getDb } from "../db.ts";
-import { statSync } from "fs";
-import { join } from "path";
+import { getSql } from "../db.ts";
 
 export const statusRouter = new Hono();
 
-statusRouter.get("/", (c) => {
-  const db = getDb();
+statusRouter.get("/", async (c) => {
+  const sql = getSql();
 
-  const countRow = db.query<{ cnt: number }, []>(
-    "SELECT COUNT(*) AS cnt FROM parts"
-  ).get();
-
-  const metaRow = db.query<{ max_ts: number | null }, []>(
-    "SELECT MAX(ingested_at) AS max_ts FROM ingest_meta"
-  ).get();
-
-  const catRow = db.query<{ cnt: number }, []>(
-    "SELECT COUNT(*) AS cnt FROM ingest_meta"
-  ).get();
-
-  const dbPath = process.env.DB_PATH ?? join(import.meta.dir, "../../../data/parts.db");
-  let dbSizeBytes = 0;
-  try {
-    dbSizeBytes = statSync(dbPath).size;
-  } catch {
-    // ignore
-  }
+  const [countRow] = await sql`SELECT COUNT(*) AS cnt FROM parts`;
+  const [metaRow] = await sql`SELECT MAX(ingested_at) AS max_ts FROM ingest_meta`;
+  const [catRow] = await sql`SELECT COUNT(*) AS cnt FROM ingest_meta`;
+  const [sizeRow] = await sql`SELECT pg_database_size(current_database()) AS size_bytes`;
 
   return c.json({
-    total_parts: countRow?.cnt ?? 0,
+    total_parts: Number(countRow?.cnt ?? 0),
     last_ingested: metaRow?.max_ts
-      ? new Date(metaRow.max_ts * 1000).toISOString()
+      ? new Date(Number(metaRow.max_ts) * 1000).toISOString()
       : null,
-    categories_count: catRow?.cnt ?? 0,
-    db_size_bytes: dbSizeBytes,
+    categories_count: Number(catRow?.cnt ?? 0),
+    db_size_bytes: Number(sizeRow?.size_bytes ?? 0),
   });
 });

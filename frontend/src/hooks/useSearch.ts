@@ -26,7 +26,8 @@ export function useSearch() {
   const [tookMs, setTookMs] = useState<number | null>(null);
   const [page, setPage] = useState(0);
 
-  const debouncedQuery = useDebounce(query, 150);
+  const debounceMs = query.trim().length <= 3 ? 1000 : 500;
+  const debouncedQuery = useDebounce(query, debounceMs);
   const abortRef = useRef<AbortController | null>(null);
 
   const [filters, setFiltersState] = useState<Filters>({
@@ -34,7 +35,7 @@ export function useSearch() {
     inStock: false,
     fuzzy: false,
     sort: "relevance",
-    matchAll: true,
+    matchAll: false,
   });
 
   const setFilters = useCallback((update: Partial<Filters>) => {

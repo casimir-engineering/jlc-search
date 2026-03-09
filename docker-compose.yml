@@ -1,28 +1,40 @@
 services:
+  db:
+    image: postgres:17-alpine
+    network_mode: host
+    environment:
+      POSTGRES_DB: jst
+      POSTGRES_USER: jst
+      POSTGRES_PASSWORD: jst
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jst"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   backend:
     build:
       context: .
       dockerfile: backend/Dockerfile
-    ports:
-      - "3001:3001"
+    network_mode: host
     volumes:
-      - parts_data:/app/data
+      - img_cache:/app/data/img
     environment:
-      DB_PATH: /app/data/parts.db
+      DATABASE_URL: postgres://jst:jst@localhost:5432/jst
       PORT: "3001"
+    depends_on:
+      db:
+        condition: service_healthy
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:3001/api/status || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
 
   frontend:
     build:
       context: frontend
       dockerfile: Dockerfile
-    ports:
-      - "3000:80"
+    network_mode: host
     depends_on:
       - backend
     restart: unless-stopped
@@ -31,14 +43,19 @@ services:
     build:
       context: .
       dockerfile: ingest/Dockerfile
+    network_mode: host
     volumes:
-      - parts_data:/app/data
+      - img_cache:/app/data/img
     environment:
-      DB_PATH: /app/data/parts.db
+      DATABASE_URL: postgres://jst:jst@localhost:5432/jst
       JLCPARTS_BASE: https://yaqwsx.github.io/jlcparts
       INGEST_CONCURRENCY: "4"
+    depends_on:
+      db:
+        condition: service_healthy
     profiles:
       - tools
 
 volumes:
-  parts_data:
+  pg_data:
+  img_cache:

@@ -1,5 +1,6 @@
 import type { PartRow } from "./types.ts";
 import { buildSearchText } from "./attrs.ts";
+import { translateChinese } from "./chinese-dict.ts";
 
 /**
  * Actual attribute structure in jlcparts JSON:
@@ -97,7 +98,7 @@ export function parseComponent(
   lcsc = lcsc.toUpperCase();
 
   // "mfr" in schema = MPN (counterintuitive)
-  const mpn = String(comp.mfr ?? "");
+  const mpn = translateChinese(String(comp.mfr ?? ""));
 
   return {
     lcsc,
@@ -107,7 +108,7 @@ export function parseComponent(
     subcategory,
     description: String(comp.description ?? ""),
     datasheet: typeof comp.datasheet === "string" && comp.datasheet ? comp.datasheet : null,
-    package: pkg,
+    package: translateChinese(pkg ?? "") || null,
     joints: comp.joints != null ? Number(comp.joints) : null,
     stock: 0,
     price_raw: normalizePriceToString(comp.price),

@@ -1,30 +1,28 @@
-import { Database } from "bun:sqlite";
-import { join, dirname } from "path";
+import postgres from "postgres";
 import { mkdirSync } from "fs";
-import { SCHEMA_SQL } from "../../backend/src/schema.ts";
+import { applySchema } from "../../backend/src/schema.ts";
 import { fetchIndex, fetchCategoryData, fetchStockData } from "./downloader.ts";
 import { parseComponent } from "./parser.ts";
 import {
   bulkInsertParts,
   bulkUpdateStock,
-  dropFtsTriggers,
-  rebuildFts,
-  recreateFtsTriggers,
+  disableSearchTrigger,
+  enableSearchTrigger,
+  rebuildSearchVectors,
 } from "./writer.ts";
 
+const DATABASE_URL = process.env.DATABASE_URL ?? "postgres://jst:jst@localhost:5432/jst";
 const JLCPARTS_BASE =
   process.env.JLCPARTS_BASE ?? "https://yaqwsx.github.io/jlcparts";
-const DB_PATH =
-  process.env.DB_PATH ?? join(import.meta.dir, "../../data/parts.db");
 const CONCURRENCY = parseInt(process.env.INGEST_CONCURRENCY ?? "4");
 
-// Ensure data directory exists
-mkdirSync(dirname(DB_PATH), { recursive: true });
+// Ensure data/img directory exists for image caching
+mkdirSync("data/img", { recursive: true });
 
 async function withConcurrency<T>(
   items: T[],
   concurrency: number,
-  fn: (item: T) => Promise<void>
+  fn: (item: T) => Promise<void>,
 ): Promise<void> {
   const queue = [...items];
   const workers = Array.from({ length: concurrency }, async () => {
@@ -48,67 +46,61 @@ interface WorkItem {
 
 async function main() {
   console.log(`jst-search ingest`);
-  console.log(`DB: ${DB_PATH}`);
+  console.log(`DB: ${DATABASE_URL.replace(/:[^:@]+@/, ":***@")}`);
   console.log(`Source: ${JLCPARTS_BASE}`);
 
-  const db = new Database(DB_PATH, { create: true });
-  db.exec(SCHEMA_SQL);
+  const sql = postgres(DATABASE_URL, { max: 10 });
+  await applySchema(sql);
 
   // Fetch master index
   const index = await fetchIndex(JLCPARTS_BASE);
   const categories = index.categories;
 
-  // Build work list: check which categories have changed
+  // Build work list
   const workItems: WorkItem[] = [];
   let stockOnlyCount = 0;
   let skipCount = 0;
 
   for (const [category, subcats] of Object.entries(categories)) {
     for (const [subcategory, meta] of Object.entries(subcats)) {
-      const existing = db.query<
-        { datahash: string; stockhash: string },
-        [string, string]
-      >(
-        "SELECT datahash, stockhash FROM ingest_meta WHERE category = ? AND subcategory = ?"
-      ).get(category, subcategory);
+      const existing = await sql`
+        SELECT datahash, stockhash FROM ingest_meta
+        WHERE category = ${category} AND subcategory = ${subcategory}
+      `;
+      const row = existing[0];
 
-      const dataChanged = !existing || existing.datahash !== meta.datahash;
-      const stockChanged = !existing || existing.stockhash !== meta.stockhash;
+      const dataChanged = !row || row.datahash !== meta.datahash;
+      const stockChanged = !row || row.stockhash !== meta.stockhash;
 
-      if (!dataChanged && !stockChanged) {
-        skipCount++;
-        continue;
-      }
+      if (!dataChanged && !stockChanged) { skipCount++; continue; }
       if (!dataChanged && stockChanged) stockOnlyCount++;
 
       workItems.push({
-        category,
-        subcategory,
+        category, subcategory,
         sourcename: meta.sourcename,
         datahash: meta.datahash,
         stockhash: meta.stockhash,
-        dataChanged,
-        stockChanged,
+        dataChanged, stockChanged,
       });
     }
   }
 
   console.log(
-    `Categories: ${workItems.length} to update (${stockOnlyCount} stock-only), ${skipCount} unchanged`
+    `Categories: ${workItems.length} to update (${stockOnlyCount} stock-only), ${skipCount} unchanged`,
   );
 
   if (workItems.length === 0) {
     console.log("Nothing to do.");
-    db.close();
+    await sql.end();
     return;
   }
 
-  // Drop FTS triggers for bulk performance
-  dropFtsTriggers(db);
+  // Disable trigger for bulk performance
+  let needsVectorRebuild = false;
+  await disableSearchTrigger(sql);
 
   let processed = 0;
   const total = workItems.length;
-  let ftsRebuildNeeded = false;
 
   await withConcurrency(workItems, CONCURRENCY, async (item) => {
     try {
@@ -116,31 +108,26 @@ async function main() {
         const data = await fetchCategoryData(JLCPARTS_BASE, item.sourcename);
         const schema = data.schema;
         const parts = (data.components ?? []).map((row) =>
-          parseComponent(schema, row, item.category, item.subcategory)
+          parseComponent(schema, row, item.category, item.subcategory),
         );
-        bulkInsertParts(db, parts);
-        ftsRebuildNeeded = true;
+        await bulkInsertParts(sql, parts);
+        needsVectorRebuild = true;
       }
 
       if (item.stockChanged) {
         const stockData = await fetchStockData(JLCPARTS_BASE, item.sourcename);
-        bulkUpdateStock(db, stockData);
+        await bulkUpdateStock(sql, stockData);
       }
 
-      // Update ingest_meta
-      db.run(
-        `INSERT OR REPLACE INTO ingest_meta
-          (category, subcategory, sourcename, datahash, stockhash, ingested_at)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [
-          item.category,
-          item.subcategory,
-          item.sourcename,
-          item.datahash,
-          item.stockhash,
-          Math.floor(Date.now() / 1000),
-        ]
-      );
+      await sql`
+        INSERT INTO ingest_meta (category, subcategory, sourcename, datahash, stockhash, ingested_at)
+        VALUES (${item.category}, ${item.subcategory}, ${item.sourcename}, ${item.datahash}, ${item.stockhash}, ${Math.floor(Date.now() / 1000)})
+        ON CONFLICT (category, subcategory) DO UPDATE SET
+          sourcename = EXCLUDED.sourcename,
+          datahash = EXCLUDED.datahash,
+          stockhash = EXCLUDED.stockhash,
+          ingested_at = EXCLUDED.ingested_at
+      `;
 
       processed++;
       if (processed % 10 === 0 || processed === total) {
@@ -152,18 +139,16 @@ async function main() {
     }
   });
 
-  // Rebuild FTS index and restore triggers
-  if (ftsRebuildNeeded) {
-    recreateFtsTriggers(db);
-    rebuildFts(db);
-  } else {
-    recreateFtsTriggers(db);
+  // Rebuild search vectors and re-enable trigger
+  if (needsVectorRebuild) {
+    await rebuildSearchVectors(sql);
   }
+  await enableSearchTrigger(sql);
 
-  const countRow = db.query<{ cnt: number }, []>("SELECT COUNT(*) AS cnt FROM parts").get();
+  const [countRow] = await sql`SELECT COUNT(*) AS cnt FROM parts`;
   console.log(`\nIngest complete. Total parts in DB: ${countRow?.cnt ?? 0}`);
 
-  db.close();
+  await sql.end();
 }
 
 main().catch((err) => {

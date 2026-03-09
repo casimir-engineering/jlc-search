@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { join } from "path";
 import { existsSync, readFileSync, writeFileSync } from "fs";
-import { getDb } from "../db.ts";
+import { getSql } from "../db.ts";
 
 export const pcbaRouter = new Hono();
 
@@ -78,7 +78,8 @@ pcbaRouter.get("/:lcsc", async (c) => {
     writeFileSync(cachePath(lcsc), JSON.stringify(result));
     if (result.description) {
       try {
-        getDb().run("UPDATE parts SET description = ? WHERE lcsc = ?", [result.description, lcsc]);
+        const sql = getSql();
+        await sql`UPDATE parts SET description = ${result.description} WHERE lcsc = ${lcsc}`;
       } catch {}
     }
     return c.json({ lcsc, ...result });

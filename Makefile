@@ -1,12 +1,27 @@
-.PHONY: dev ingest build up down logs
+.PHONY: dev dev-backend dev-frontend pg ingest build up down logs migrate
 
-# Development: run backend and frontend locally (no Docker)
-dev:
+# Start PostgreSQL for local development
+pg:
+	docker compose up db -d
+	@echo "PostgreSQL running on localhost:5432"
+
+# Development: run backend and frontend locally (needs pg running)
+dev: pg
 	@echo "Starting backend and frontend in dev mode..."
 	@cd backend && bun install && bun run dev &
 	@cd frontend && npm install && npm run dev
 
-# Run ingest in Docker (uses existing parts_data volume)
+dev-backend: pg
+	cd backend && bun run src/index.ts
+
+dev-frontend:
+	cd frontend && npm run dev
+
+# Migrate SQLite data to PostgreSQL
+migrate: pg
+	bun run scripts/migrate-sqlite-to-pg.ts
+
+# Run ingest in Docker
 ingest:
 	docker compose run --rm ingest
 

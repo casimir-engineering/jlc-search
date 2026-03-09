@@ -6,6 +6,9 @@
     "start": "bun src/ingest.ts",
     "ingest": "bun src/ingest.ts"
   },
+  "dependencies": {
+    "postgres": "^3.4.5"
+  },
   "devDependencies": {
     "@types/bun": "latest"
   }
