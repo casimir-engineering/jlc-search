@@ -38,21 +38,22 @@ function markNoFp(lcsc: string): void {
 // PCB layer render styles (for white background display)
 // fmt: { stroke, fill, strokeWidth?, strokeDasharray? }
 const LAYER_STYLES: Record<number, { stroke: string; fill: string; strokeWidth?: number; strokeDasharray?: string }> = {
-  1:   { stroke: "none",    fill: "#c87137" },                                              // top copper
-  2:   { stroke: "none",    fill: "#6464c8" },                                              // bottom copper
-  3:   { stroke: "#555555", fill: "none" },                                                 // top silkscreen
-  4:   { stroke: "#555555", fill: "none" },                                                 // bottom silkscreen
-  11:  { stroke: "none",    fill: "#c87137" },                                              // multi-layer SMD/THT pads
-  12:  { stroke: "#cc00cc", fill: "none",    strokeWidth: 0.15, strokeDasharray: "2 2" },  // top courtyard
-  13:  { stroke: "#cc00cc", fill: "none",    strokeWidth: 0.15, strokeDasharray: "2 2" },  // bottom courtyard
-  99:  { stroke: "#aaaaaa", fill: "#e8e8e8" },                                              // component body
-  100: { stroke: "none",    fill: "#c87137" },                                              // multi-layer / exposed pad
+  1:   { stroke: "none",    fill: "#c83737" },                                              // top copper (red)
+  2:   { stroke: "none",    fill: "#6464c8" },                                              // bottom copper (blue)
+  3:   { stroke: "#555555", fill: "none" },                                                 // top silkscreen (dark gray)
+  4:   { stroke: "#338833", fill: "none" },                                                 // bottom silkscreen (green)
+  11:  { stroke: "none",    fill: "#c87137" },                                              // multi-layer SMD/THT pads (copper)
+  12:  { stroke: "#cc00cc", fill: "none",    strokeWidth: 0.15, strokeDasharray: "2 2" },  // top courtyard (magenta)
+  13:  { stroke: "#0077cc", fill: "none",    strokeWidth: 0.15, strokeDasharray: "2 2" },  // bottom courtyard (blue)
+  99:  { stroke: "#aaaaaa", fill: "#e8e8e8" },                                              // component body (light gray)
+  100: { stroke: "none",    fill: "#5f8c5a" },                                              // multi-layer / exposed pad (green)
   101: { stroke: "#cccccc", fill: "none",    strokeWidth: 0.1 },                           // component boundary
 };
 
-// Render back-to-front so copper lands on top of body shapes
-// Layer 11 (multi-layer SMD pads) rendered after 100 so they sit on top of copper fills
-const RENDER_ORDER = [99, 100, 11, 101, 12, 13, 4, 3, 2, 1];
+// Copper SOLIDREGIONs render behind body; PADs/TRACKs render on top
+const COPPER_LAYERS = new Set([1, 2, 11, 100]);
+// Render order for non-fill shapes (PADs, TRACKs, etc.) — body first, then pads on top
+const RENDER_ORDER = [99, 11, 101, 12, 13, 4, 3, 2, 1];
 
 function renderFootprintSvg(data: Record<string, unknown>): string | null {
   const shapes = (data.shape as string[]) ?? [];
@@ -112,6 +113,8 @@ function renderFootprintSvg(data: Record<string, unknown>): string | null {
   // Second pass: build SVG elements grouped by layer
   const byLayer: Record<number, string[]> = {};
   for (const l of RENDER_ORDER) byLayer[l] = [];
+  // Copper SOLIDREGIONs render behind the body so they don't cover it
+  const copperFills: string[] = [];
 
   // Collect pad info for pin labels
   const padLabels: { cx: number; cy: number; pin: string; w: number; h: number }[] = [];
@@ -217,18 +220,24 @@ function renderFootprintSvg(data: Record<string, unknown>): string | null {
       if (layer === 100 && hasLayer11Pads) continue;
       const s = LAYER_STYLES[layer];
       if (!s) continue;
-      if (!byLayer[layer]) byLayer[layer] = [];
 
       const path = f[3];
       if (!path?.includes("M")) continue;
-      byLayer[layer].push(
-        `<path d="${path}" fill="${s.fill}" stroke="${s.stroke}" stroke-width="0.3"/>`
-      );
+      const el = `<path d="${path}" fill="${s.fill}" stroke="${s.stroke}" stroke-width="0.3"/>`;
+
+      // Copper fills render behind the body so component body stays visible
+      if (COPPER_LAYERS.has(layer)) {
+        copperFills.push(el);
+      } else {
+        if (!byLayer[layer]) byLayer[layer] = [];
+        byLayer[layer].push(el);
+      }
     }
     // SVGNODE (layer 19, 3D outline helper) and other types are intentionally skipped
   }
 
-  const elements = RENDER_ORDER.flatMap(l => byLayer[l] ?? []);
+  // Copper fills first (behind body), then body + pads + silkscreen on top
+  const elements = [...copperFills, ...RENDER_ORDER.flatMap(l => byLayer[l] ?? [])];
   if (elements.length === 0) return null;
 
   // Render pin labels on top of pads
