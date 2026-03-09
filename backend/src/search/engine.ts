@@ -200,6 +200,17 @@ export function search(params: SearchParams): { results: PartSummary[]; total: n
   const rfJoin = rfTable ? `JOIN ${rfTable} rf ON rf.lcsc = p.lcsc` : "";
   const hasAnyFilter = rfTable || colFilter.sql;
 
+  // Build SQL exclusion clauses for negated tokens (works in all paths)
+  if (parsed.negations.length > 0) {
+    for (const neg of parsed.negations) {
+      const ftsNeg = `"${neg.replace(/"/g, '""')}"*`;
+      filter.sql += ` AND p.rowid NOT IN (SELECT rowid FROM parts_fts WHERE parts_fts MATCH ?)`;
+      filter.values.push(ftsNeg);
+    }
+  }
+
+  const hasTextContent = parsed.text || parsed.phrases.length > 0;
+
   // For non-relevance sorts, we need to fetch more from FTS and re-sort
   const isRelevanceSort = params.sort === "relevance";
   const sqlStockOrder = getSqlOrderBy(params.sort);
@@ -209,7 +220,7 @@ export function search(params: SearchParams): { results: PartSummary[]; total: n
 
   try {
     // Path 1: Exact LCSC code lookup
-    if (!hasAnyFilter && detectLcscCode(parsed.text || trimmed)) {
+    if (!hasAnyFilter && !parsed.phrases.length && !parsed.negations.length && detectLcscCode(parsed.text || trimmed)) {
       const code = (parsed.text || trimmed).toUpperCase();
       const row = db.query<Record<string, unknown>, unknown[]>(
         `SELECT ${SELECT_COLS} FROM parts p ${rfJoin} WHERE p.lcsc = ? ${filter.sql} LIMIT 1`
@@ -218,8 +229,8 @@ export function search(params: SearchParams): { results: PartSummary[]; total: n
       if (row) return { results: [rowToSummary(row)], total: 1 };
     }
 
-    // Path 0: Filter-only query (no text tokens, but has range or column filters)
-    if (!parsed.text && hasAnyFilter) {
+    // Path 0: Filter-only query (no text tokens or phrases, but has range or column filters)
+    if (!hasTextContent && hasAnyFilter) {
       const orderBy = sqlStockOrder ?? "p.stock DESC";
       const fetchLimit = isPriceSort ? limit * SORT_FETCH_MULTIPLIER : limit + 1;
       const sqlOffset = isPriceSort ? 0 : offset;
@@ -248,10 +259,15 @@ export function search(params: SearchParams): { results: PartSummary[]; total: n
       return { results, total };
     }
 
+    // If no positive text content at all, nothing to search for
+    if (!hasTextContent) {
+      return { results: [], total: 0 };
+    }
+
     // Path 2: FTS5 BM25 search (with optional range filters)
-    const textQuery = parsed.text || trimmed;
-    const ftsAndQuery = buildFtsQuery(textQuery);
-    const ftsOrQuery = buildFtsOrQuery(textQuery);
+    const textQuery = parsed.text;
+    const ftsAndQuery = buildFtsQuery(textQuery, parsed.phrases);
+    const ftsOrQuery = buildFtsOrQuery(textQuery, parsed.phrases);
 
     let ftsResults: (PartSummary & { score?: number })[] = [];
     let total = 0;
@@ -310,7 +326,7 @@ export function search(params: SearchParams): { results: PartSummary[]; total: n
         const matchingTokens = tokMatchCounts.filter((t) => t.cnt > 0).map((t) => t.tok);
 
         if (matchingTokens.length >= 2 && matchingTokens.length < tokens.length) {
-          const result = runFts(buildFtsQuery(matchingTokens.join(" ")), FALLBACK_FETCH);
+          const result = runFts(buildFtsQuery(matchingTokens.join(" "), parsed.phrases), FALLBACK_FETCH);
           if (result.cnt > 0) { rows = result.rows; cnt = result.cnt; }
         }
 
@@ -323,7 +339,7 @@ export function search(params: SearchParams): { results: PartSummary[]; total: n
             if (kept.size < 2) break;
             kept.delete(dropTok);
             const remaining = tryTokens.filter((t) => kept.has(t));
-            const result = runFts(buildFtsQuery(remaining.join(" ")), FALLBACK_FETCH);
+            const result = runFts(buildFtsQuery(remaining.join(" "), parsed.phrases), FALLBACK_FETCH);
             if (result.cnt > 0) { rows = result.rows; cnt = result.cnt; break; }
           }
         }

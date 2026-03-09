@@ -7,35 +7,61 @@ export function detectLcscCode(q: string): boolean {
  * Build an FTS5 AND query: all tokens must match.
  * Every token gets a prefix wildcard so "1.25" matches "1.25mm",
  * "100nF" matches "100nF" exactly, etc.
+ * Phrases are matched exactly (no wildcard). Negations use NOT.
  */
-export function buildFtsQuery(raw: string): string {
-  const tokens = raw.trim().split(/\s+/).filter(Boolean);
-  if (tokens.length === 0) return '""';
+export function buildFtsQuery(raw: string, phrases: string[] = [], negations: string[] = []): string {
+  const parts: string[] = [];
 
-  return tokens
-    .map((tok) => {
-      const escaped = tok.replace(/"/g, '""');
-      return `"${escaped}"*`;
-    })
-    .join(" ");
+  const tokens = raw.trim().split(/\s+/).filter(Boolean);
+  for (const tok of tokens) {
+    parts.push(`"${tok.replace(/"/g, '""')}"*`);
+  }
+
+  for (const phrase of phrases) {
+    parts.push(`"${phrase.replace(/"/g, '""')}"`);
+  }
+
+  let result = parts.join(" ") || '""';
+
+  for (const neg of negations) {
+    result += ` NOT "${neg.replace(/"/g, '""')}"*`;
+  }
+
+  return result;
 }
 
 /**
  * Build an FTS5 OR query: any token can match.
  * Useful fallback when AND returns no results.
+ * Phrases and negations are still AND/NOT (they constrain the OR result).
  */
-export function buildFtsOrQuery(raw: string): string {
-  const tokens = raw.trim().split(/\s+/).filter(Boolean);
-  if (tokens.length === 0) return '""';
+export function buildFtsOrQuery(raw: string, phrases: string[] = [], negations: string[] = []): string {
+  const parts: string[] = [];
 
-  return tokens
-    .map((tok, i) => {
-      const escaped = tok.replace(/"/g, '""');
-      return i === tokens.length - 1
-        ? `"${escaped}"*`
-        : `"${escaped}"`;
-    })
-    .join(" OR ");
+  const tokens = raw.trim().split(/\s+/).filter(Boolean);
+  if (tokens.length > 0) {
+    const orPart = tokens
+      .map((tok, i) => {
+        const escaped = tok.replace(/"/g, '""');
+        return i === tokens.length - 1
+          ? `"${escaped}"*`
+          : `"${escaped}"`;
+      })
+      .join(" OR ");
+    parts.push(tokens.length > 1 ? `(${orPart})` : orPart);
+  }
+
+  for (const phrase of phrases) {
+    parts.push(`"${phrase.replace(/"/g, '""')}"`);
+  }
+
+  let result = parts.join(" ") || '""';
+
+  for (const neg of negations) {
+    result += ` NOT "${neg.replace(/"/g, '""')}"*`;
+  }
+
+  return result;
 }
 
 // ── Range filter parsing ──────────────────────────────────────────────
@@ -83,6 +109,8 @@ export interface RangeFilter {
 
 export interface ParsedQuery {
   text: string;                    // FTS text tokens
+  phrases: string[];               // exact phrase matches (from "...")
+  negations: string[];             // negated tokens/phrases (from -token)
   filterGroups: RangeFilter[][];   // DNF: OR of AND-groups
 }
 
@@ -145,7 +173,23 @@ function parseFilterToken(token: string): RangeFilter | null {
  *   "Ohm:<2m | Ohm:>1M"       → text="", filters=[[Ohm<0.002], [Ohm>1e6]]
  */
 export function parseQuery(raw: string): ParsedQuery {
-  const tokens = raw.trim().split(/\s+/).filter(Boolean);
+  const phrases: string[] = [];
+  const negations: string[] = [];
+
+  // 1. Extract quoted phrases and negated phrases: "exact phrase", -"negated phrase"
+  const withoutPhrases = raw.replace(/-?"([^"]+)"/g, (match, phrase) => {
+    const trimmed = (phrase as string).trim();
+    if (!trimmed) return " ";
+    if (match.startsWith("-")) {
+      negations.push(trimmed);
+    } else {
+      phrases.push(trimmed);
+    }
+    return " ";
+  });
+
+  // 2. Split remaining into tokens
+  const tokens = withoutPhrases.trim().split(/\s+/).filter(Boolean);
   const textTokens: string[] = [];
   const filterGroups: RangeFilter[][] = [[]];
 
@@ -154,13 +198,18 @@ export function parseQuery(raw: string): ParsedQuery {
 
     // Handle logical operators
     if (tok === "|") {
-      // Start new OR group only if current group has filters
       if (filterGroups[filterGroups.length - 1].length > 0) {
         filterGroups.push([]);
       }
       continue;
     }
-    if (tok === "&") continue; // AND is default, skip
+    if (tok === "&") continue;
+
+    // Negation: -token
+    if (tok.startsWith("-") && tok.length > 1) {
+      negations.push(tok.slice(1));
+      continue;
+    }
 
     // Try parsing as range filter
     const filter = parseFilterToken(tok);
@@ -178,6 +227,8 @@ export function parseQuery(raw: string): ParsedQuery {
 
   return {
     text: textTokens.join(" "),
+    phrases,
+    negations,
     filterGroups: filterGroups.filter((g) => g.length > 0),
   };
 }

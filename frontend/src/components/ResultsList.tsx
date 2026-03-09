@@ -83,6 +83,8 @@ export function ResultsList({ results, total, loading, error, query, tookMs, pag
           <li>Keywords — <code>100nF 0402 ceramic</code></li>
           <li>Connector description — <code>1.25 picoblade horizontal smd</code></li>
           <li>Range filters — <code>F:100n-&gt;1u V:&gt;25</code>, <code>Ohm:&lt;2m</code>, <code>pads:4</code></li>
+          <li>Exclude terms — <code>PADAUK -OTP</code></li>
+          <li>Exact phrase — <code>"Thick Film"</code></li>
         </ul>
       </div>
     );
