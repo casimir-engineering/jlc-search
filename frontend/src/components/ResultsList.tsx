@@ -121,6 +121,7 @@ export function ResultsList({ results, total, loading, error, query, tookMs, pag
           </span>
         )}
       </div>
+      <Pagination page={page} totalPages={totalPages} onPageChange={onPageChange} />
       <div className="results-list">
         {results.map((part) => (
           <PartCard key={part.lcsc} part={part} />
