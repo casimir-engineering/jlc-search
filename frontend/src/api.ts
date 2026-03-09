@@ -23,6 +23,16 @@ export async function searchParts(
   return res.json() as Promise<SearchResponse>;
 }
 
+export async function fetchPartsByIds(
+  ids: string[],
+  signal?: AbortSignal
+): Promise<{ results: import("./types.ts").PartSummary[] }> {
+  if (ids.length === 0) return { results: [] };
+  const res = await fetch(`${API_BASE}/api/parts/batch?ids=${ids.join(",")}`, { signal });
+  if (!res.ok) throw new Error(`Batch fetch failed: ${res.status}`);
+  return res.json();
+}
+
 export async function getStatus(): Promise<{
   total_parts: number;
   last_ingested: string | null;

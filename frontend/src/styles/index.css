@@ -177,6 +177,10 @@ code { font-family: monospace; background: #eee; padding: 1px 4px; border-radius
   border-color: #0066cc;
   color: #fff;
 }
+.chip-danger { border-color: #cc2200; color: #cc2200; }
+.chip-danger:hover { border-color: #cc2200; color: #cc2200; }
+.chip-danger-confirm { background: #cc2200; border-color: #cc2200; color: #fff; }
+.chip-danger-confirm:hover { background: #aa1c00; border-color: #aa1c00; color: #fff; }
 
 .toggle-label {
   display: flex;
@@ -239,16 +243,35 @@ code { font-family: monospace; background: #eee; padding: 1px 4px; border-radius
 
 .part-card {
   background: #fff;
-  border: 1px solid #e8e8e8;
+  border: 1.5px solid #e8e8e8;
   border-radius: 8px;
   display: flex;
   gap: 1rem;
   padding: 1rem;
   box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-  transition: box-shadow 0.12s;
+  transition: box-shadow 0.12s, border-color 0.12s;
+  position: relative;
 }
 
 .part-card:hover { box-shadow: 0 3px 8px rgba(0,0,0,0.1); }
+.part-card-favorite { border-color: #0066cc; }
+
+.fav-star {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1.2rem;
+  color: #ccc;
+  line-height: 1;
+  padding: 2px;
+  transition: color 0.12s;
+  z-index: 1;
+}
+.fav-star:hover { color: #f5a623; }
+.fav-star-active { color: #f5a623; }
 
 .part-card.skeleton {
   height: 140px;

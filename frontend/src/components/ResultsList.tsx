@@ -13,6 +13,9 @@ interface Props {
   pageSize: number;
   onPageChange: (page: number) => void;
   showApiData: boolean;
+  favorites: Set<string>;
+  onToggleFavorite: (lcsc: string) => void;
+  favoritesOnly: boolean;
 }
 
 function Pagination({ page, totalPages, onPageChange }: { page: number; totalPages: number; onPageChange: (p: number) => void }) {
@@ -61,7 +64,7 @@ function Pagination({ page, totalPages, onPageChange }: { page: number; totalPag
   );
 }
 
-export function ResultsList({ results, total, loading, error, query, tookMs, page, totalPages, pageSize, onPageChange, showApiData }: Props) {
+export function ResultsList({ results, total, loading, error, query, tookMs, page, totalPages, pageSize, onPageChange, showApiData, favorites, onToggleFavorite, favoritesOnly }: Props) {
   if (error) {
     return (
       <div className="results-message error">
@@ -70,7 +73,7 @@ export function ResultsList({ results, total, loading, error, query, tookMs, pag
     );
   }
 
-  if (!query.trim()) {
+  if (!query.trim() && !favoritesOnly) {
     return (
       <div className="results-empty-state">
         <p>Search for JLCPCB/LCSC parts by:</p>
@@ -96,6 +99,13 @@ export function ResultsList({ results, total, loading, error, query, tookMs, pag
   }
 
   if (!loading && results.length === 0) {
+    if (favoritesOnly && !query.trim()) {
+      return (
+        <div className="results-message">
+          No favorites yet. Click the star on any part to add it.
+        </div>
+      );
+    }
     return (
       <div className="results-message">
         No results for <strong>"{query}"</strong>.
@@ -110,7 +120,7 @@ export function ResultsList({ results, total, loading, error, query, tookMs, pag
   return (
     <>
       <div className="results-meta">
-        {total > 0 && (
+        {total > 0 && query.trim() && (
           <span>
             {totalPages > 1
               ? `${startIdx}-${endIdx} of ${total.toLocaleString()}`
@@ -121,11 +131,14 @@ export function ResultsList({ results, total, loading, error, query, tookMs, pag
             {tookMs != null && <span className="took-ms"> ({tookMs}ms)</span>}
           </span>
         )}
+        {total > 0 && !query.trim() && favoritesOnly && (
+          <span>{total} favorite{total !== 1 ? "s" : ""}</span>
+        )}
       </div>
       <Pagination page={page} totalPages={totalPages} onPageChange={onPageChange} />
       <div className="results-list">
         {results.map((part) => (
-          <PartCard key={part.lcsc} part={part} showApiData={showApiData} />
+          <PartCard key={part.lcsc} part={part} showApiData={showApiData} isFavorite={favorites.has(part.lcsc)} onToggleFavorite={onToggleFavorite} />
         ))}
       </div>
       <Pagination page={page} totalPages={totalPages} onPageChange={onPageChange} />

@@ -6,6 +6,8 @@ import { PriceTable } from "./PriceTable.tsx";
 interface Props {
   part: PartSummary;
   showApiData: boolean;
+  isFavorite: boolean;
+  onToggleFavorite: (lcsc: string) => void;
 }
 
 const PART_TYPE_CLASS: Record<string, string> = {
@@ -50,7 +52,7 @@ function highlightJson(obj: unknown): string {
 const POPUP_SIZE = 390;
 const POPUP_GAP = 12;
 
-export function PartCard({ part, showApiData }: Props) {
+export function PartCard({ part, showApiData, isFavorite, onToggleFavorite }: Props) {
   const [photoSrc] = useState(part.lcsc ? `/api/img/${part.lcsc}` : null);
   const [photoFailed, setPhotoFailed] = useState(false);
   const [fpFailed, setFpFailed] = useState(false);
@@ -104,7 +106,15 @@ export function PartCard({ part, showApiData }: Props) {
   const lcscUrl = `https://www.lcsc.com/search?q=${encodeURIComponent(part.lcsc)}`;
 
   return (
-    <div className="part-card">
+    <div className={`part-card${isFavorite ? " part-card-favorite" : ""}`}>
+      <button
+        className={`fav-star${isFavorite ? " fav-star-active" : ""}`}
+        onClick={() => onToggleFavorite(part.lcsc)}
+        title={isFavorite ? "Remove from favorites" : "Add to favorites"}
+        aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
+      >
+        {isFavorite ? "\u2605" : "\u2606"}
+      </button>
       <div className="part-card-images">
         {photoSrc && !photoFailed && (
           <div

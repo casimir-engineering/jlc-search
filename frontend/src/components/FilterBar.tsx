@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import type { Filters, SortOption } from "../types.ts";
 
 const PART_TYPES = ["Basic", "Preferred", "Extended", "Mechanical"];
@@ -15,9 +16,31 @@ interface Props {
   onChange: (update: Partial<Filters>) => void;
   showApiData: boolean;
   onShowApiDataChange: (v: boolean) => void;
+  favoritesOnly: boolean;
+  onFavoritesOnlyChange: (v: boolean) => void;
+  favoritesCount: number;
+  onClearFavorites: () => void;
 }
 
-export function FilterBar({ filters, onChange, showApiData, onShowApiDataChange }: Props) {
+export function FilterBar({ filters, onChange, showApiData, onShowApiDataChange, favoritesOnly, onFavoritesOnlyChange, favoritesCount, onClearFavorites }: Props) {
+  const [confirmClear, setConfirmClear] = useState(false);
+
+  // Reset confirm state after 3s or when favorites count changes to 0
+  useEffect(() => {
+    if (!confirmClear) return;
+    const t = setTimeout(() => setConfirmClear(false), 3000);
+    return () => clearTimeout(t);
+  }, [confirmClear]);
+
+  function handleClearClick() {
+    if (confirmClear) {
+      onClearFavorites();
+      setConfirmClear(false);
+    } else {
+      setConfirmClear(true);
+    }
+  }
+
   function togglePartType(type: string) {
     const current = filters.partTypes;
     const next = current.includes(type)
@@ -66,6 +89,20 @@ export function FilterBar({ filters, onChange, showApiData, onShowApiDataChange 
           />
           Fuzzy search
         </label>
+        <button
+          className={`chip ${favoritesOnly ? "chip-active" : ""}`}
+          onClick={() => onFavoritesOnlyChange(!favoritesOnly)}
+        >
+          {"\u2605"} Favorites{favoritesCount > 0 ? ` (${favoritesCount})` : ""}
+        </button>
+        {favoritesCount > 0 && (
+          <button
+            className={`chip ${confirmClear ? "chip-danger-confirm" : "chip-danger"}`}
+            onClick={handleClearClick}
+          >
+            {confirmClear ? "Confirm clear" : "Clear favorites"}
+          </button>
+        )}
         <label className="toggle-label">
           <input
             type="checkbox"
