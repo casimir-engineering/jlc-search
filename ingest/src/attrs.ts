@@ -43,6 +43,46 @@ const TYPE_UNITS: Record<string, string> = {
   temperature: "°C",
 };
 
+const SI_MULTIPLIERS: Record<string, number> = {
+  G: 1e9, M: 1e6, k: 1e3,
+  m: 1e-3, u: 1e-6, μ: 1e-6, n: 1e-9, p: 1e-12,
+};
+
+/** Unit suffixes we recognize when parsing strings like "20mA", "100nF", "50V" */
+const STRING_UNIT_SUFFIXES: [RegExp, string][] = [
+  [/Ohm$/i, "Ohm"],
+  [/Hz$/, "Hz"],
+  [/V$/, "V"],
+  [/F$/, "F"],
+  [/A$/, "A"],
+  [/H$/, "H"],
+  [/W$/, "W"],
+];
+
+/**
+ * Parse a string like "20mA", "100nF", "4.7kOhm", "50V" into {value, unit}.
+ * Returns null if the string doesn't match a recognized SI+unit pattern.
+ */
+function parseStringValue(s: string): { value: number; unit: string } | null {
+  // Try each unit suffix
+  for (const [re, unit] of STRING_UNIT_SUFFIXES) {
+    const match = s.match(re);
+    if (!match) continue;
+
+    // Strip the unit suffix to get the numeric+prefix part
+    const numPart = s.slice(0, match.index);
+    // Match: optional negative, digits, optional decimal, optional SI prefix
+    const numMatch = numPart.match(/^(-?\d+\.?\d*)(G|M|k|m|u|μ|n|p)?$/);
+    if (!numMatch) continue;
+
+    const num = parseFloat(numMatch[1]);
+    if (!isFinite(num)) continue;
+    const mult = numMatch[2] ? (SI_MULTIPLIERS[numMatch[2]] ?? 1) : 1;
+    return { value: num * mult, unit };
+  }
+  return null;
+}
+
 /**
  * Format a numeric value with SI prefix and unit suffix.
  * e.g. formatSI(1e-7, "F") → "100nF", formatSI(10000, "Ohm") → "10kOhm"
@@ -130,6 +170,7 @@ export function extractNumericAttrs(attrsJson: string): NumericAttr[] {
   }
 
   const results: NumericAttr[] = [];
+  const seen = new Set<string>(); // dedupe by "unit:value"
 
   for (const [key, raw] of Object.entries(attrs)) {
     if (SKIP_KEYS.has(key)) continue;
@@ -139,10 +180,22 @@ export function extractNumericAttrs(attrsJson: string): NumericAttr[] {
     const extracted = extractAttrValueAndType(entry);
     if (!extracted) continue;
 
+    // Path 1: Numeric value with typed unit (e.g. value=0.02, type="current")
     const typeLower = extracted.type.toLowerCase();
     const unit = TYPE_UNITS[typeLower];
     if (unit && typeof extracted.value === "number" && isFinite(extracted.value)) {
-      results.push({ unit, value: extracted.value });
+      const k = `${unit}:${extracted.value}`;
+      if (!seen.has(k)) { results.push({ unit, value: extracted.value }); seen.add(k); }
+      continue;
+    }
+
+    // Path 2: String value with embedded SI unit (e.g. "20mA", "100nF", "50V")
+    if (typeof extracted.value === "string") {
+      const parsed = parseStringValue(extracted.value.trim());
+      if (parsed) {
+        const k = `${parsed.unit}:${parsed.value}`;
+        if (!seen.has(k)) { results.push(parsed); seen.add(k); }
+      }
     }
   }
 
