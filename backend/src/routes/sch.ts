@@ -9,6 +9,9 @@ const IMG_DIR = process.env.IMG_CACHE_DIR
 
 const RETRY_AFTER_MS = 24 * 60 * 60 * 1000; // 24 hours
 
+// Track in-flight fetches to avoid duplicate requests
+const fetching = new Set<string>();
+
 function svgCachePath(lcsc: string): string {
   return join(IMG_DIR, `${lcsc}.sch.svg`);
 }
@@ -401,25 +404,10 @@ function renderSchematicSvg(data: Record<string, unknown>): string | null {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${r(vx)} ${r(vy)} ${r(vw)} ${r(vh)}"><rect x="${r(vx)}" y="${r(vy)}" width="${r(vw)}" height="${r(vh)}" fill="${COL.bg}"/>${elements.join("")}</svg>`;
 }
 
-schRouter.get("/:lcsc", async (c) => {
-  const lcsc = c.req.param("lcsc").toUpperCase();
-  if (!/^C\d+$/.test(lcsc)) return c.notFound();
-
-  const cachePath = svgCachePath(lcsc);
-
-  if (existsSync(cachePath)) {
-    const svg = Bun.file(cachePath);
-    return new Response(svg, {
-      headers: {
-        "Content-Type": "image/svg+xml",
-        "Cache-Control": "public, max-age=2592000",
-      },
-    });
-  }
-
-  if (isOnCooldown(lcsc)) return c.newResponse(null, 404);
-
-  // Fetch schematic from EasyEDA API
+/** Fetch schematic from EasyEDA in the background and cache it to disk. */
+async function fetchSchematic(lcsc: string): Promise<void> {
+  if (fetching.has(lcsc)) return;
+  fetching.add(lcsc);
   try {
     const resp = await fetch(`https://easyeda.com/api/products/${lcsc}/components`, {
       headers: {
@@ -440,19 +428,41 @@ schRouter.get("/:lcsc", async (c) => {
         const svg = renderSchematicSvg(data as Record<string, unknown>);
         if (svg) {
           mkdirSync(IMG_DIR, { recursive: true });
-          writeFileSync(cachePath, svg);
-          return new Response(svg, {
-            headers: {
-              "Content-Type": "image/svg+xml",
-              "Cache-Control": "public, max-age=2592000",
-            },
-          });
+          writeFileSync(svgCachePath(lcsc), svg);
+          return;
         }
       }
     }
-  } catch { /* network errors — fall through to 404 */ }
+  } catch {
+    // Network errors, timeouts — silently ignored
+  } finally {
+    fetching.delete(lcsc);
+  }
 
   // No schematic available — record so we don't retry for 24h
   markNoSch(lcsc);
+}
+
+schRouter.get("/:lcsc", (c) => {
+  const lcsc = c.req.param("lcsc").toUpperCase();
+  if (!/^C\d+$/.test(lcsc)) return c.notFound();
+
+  const cachePath = svgCachePath(lcsc);
+
+  if (existsSync(cachePath)) {
+    const svg = Bun.file(cachePath);
+    return new Response(svg, {
+      headers: {
+        "Content-Type": "image/svg+xml",
+        "Cache-Control": "public, max-age=2592000",
+      },
+    });
+  }
+
+  if (isOnCooldown(lcsc)) return c.newResponse(null, 404);
+
+  if (!fetching.has(lcsc)) {
+    fetchSchematic(lcsc); // intentionally not awaited
+  }
   return c.newResponse(null, 404);
 });

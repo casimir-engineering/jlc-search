@@ -78,6 +78,32 @@ export const PartCard = memo(function PartCard({ part, showApiData, isFavorite, 
     }
   };
 
+  const handleSchError = () => {
+    setSchFailed(true);
+    if (schSrc) {
+      setTimeout(() => {
+        const probe = new window.Image();
+        probe.onload = () => {
+          setSchFailed(false);
+        };
+        probe.src = schSrc;
+      }, 4000);
+    }
+  };
+
+  const handleFpError = () => {
+    setFpFailed(true);
+    if (fpSrc) {
+      setTimeout(() => {
+        const probe = new window.Image();
+        probe.onload = () => {
+          setFpFailed(false);
+        };
+        probe.src = fpSrc;
+      }, 4000);
+    }
+  };
+
   const handleMouseEnter = (e: React.MouseEvent<HTMLDivElement>, src: string) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const fitsLeft = rect.left >= POPUP_SIZE + POPUP_GAP;
@@ -127,7 +153,7 @@ export const PartCard = memo(function PartCard({ part, showApiData, isFavorite, 
               src={schSrc}
               alt={`${part.mpn} schematic`}
               loading="lazy"
-              onError={() => setSchFailed(true)}
+              onError={handleSchError}
             />
           </div>
         )}
@@ -141,7 +167,7 @@ export const PartCard = memo(function PartCard({ part, showApiData, isFavorite, 
               src={fpSrc}
               alt={`${part.mpn} footprint`}
               loading="lazy"
-              onError={() => setFpFailed(true)}
+              onError={handleFpError}
             />
           </div>
         )}

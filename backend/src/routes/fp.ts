@@ -9,6 +9,9 @@ const IMG_DIR = process.env.IMG_CACHE_DIR
 
 const RETRY_AFTER_MS = 24 * 60 * 60 * 1000; // 24 hours
 
+// Track in-flight fetches to avoid duplicate requests
+const fetching = new Set<string>();
+
 function svgCachePath(lcsc: string): string {
   return join(IMG_DIR, `${lcsc}.svg`);
 }
@@ -480,26 +483,11 @@ function renderFootprintSvg(data: Record<string, unknown>, pkgName?: string): st
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vx} ${vy} ${vw} ${vh}"><rect x="${vx}" y="${vy}" width="${vw}" height="${vh}" fill="white"/>${refGroup}${elements.join("")}${labels.join("")}${scaleEls.join("")}</svg>`;
 }
 
-fpRouter.get("/:lcsc", async (c) => {
-  const lcsc = c.req.param("lcsc").toUpperCase();
-  if (!/^C\d+$/.test(lcsc)) return c.notFound();
-  const pkgName = c.req.query("pkg") || undefined;
-
-  const cachePath = svgCachePath(lcsc);
-
-  if (existsSync(cachePath)) {
-    const svg = Bun.file(cachePath);
-    return new Response(svg, {
-      headers: {
-        "Content-Type": "image/svg+xml",
-        "Cache-Control": "public, max-age=2592000",
-      },
-    });
-  }
-
-  if (isOnCooldown(lcsc)) return c.newResponse(null, 404);
-
-  // Fetch footprint from EasyEDA API
+/** Fetch footprint from EasyEDA in the background and cache it to disk. */
+async function fetchFootprint(lcsc: string, pkgName?: string): Promise<void> {
+  if (fetching.has(lcsc)) return;
+  fetching.add(lcsc);
+  let succeeded = false;
   try {
     const resp = await fetch(`https://easyeda.com/api/products/${lcsc}/components`, {
       headers: {
@@ -520,19 +508,41 @@ fpRouter.get("/:lcsc", async (c) => {
         const svg = renderFootprintSvg(data as Record<string, unknown>, pkgName);
         if (svg) {
           mkdirSync(IMG_DIR, { recursive: true });
-          writeFileSync(cachePath, svg);
-          return new Response(svg, {
-            headers: {
-              "Content-Type": "image/svg+xml",
-              "Cache-Control": "public, max-age=2592000",
-            },
-          });
+          writeFileSync(svgCachePath(lcsc), svg);
+          succeeded = true;
         }
       }
     }
-  } catch { /* network errors — fall through to 404 */ }
+  } catch { /* network errors — silently ignored */ }
+  finally {
+    fetching.delete(lcsc);
+    if (!succeeded) markNoFp(lcsc);
+  }
+}
 
-  // No footprint available — record so we don't retry for 24h
-  markNoFp(lcsc);
+fpRouter.get("/:lcsc", (c) => {
+  const lcsc = c.req.param("lcsc").toUpperCase();
+  if (!/^C\d+$/.test(lcsc)) return c.notFound();
+  const pkgName = c.req.query("pkg") || undefined;
+
+  const cachePath = svgCachePath(lcsc);
+
+  if (existsSync(cachePath)) {
+    const svg = Bun.file(cachePath);
+    return new Response(svg, {
+      headers: {
+        "Content-Type": "image/svg+xml",
+        "Cache-Control": "public, max-age=2592000",
+      },
+    });
+  }
+
+  if (isOnCooldown(lcsc)) return c.newResponse(null, 404);
+
+  // Already being fetched — just return 404, client will retry
+  if (fetching.has(lcsc)) return c.newResponse(null, 404);
+
+  // Kick off background fetch and tell client to retry
+  fetchFootprint(lcsc, pkgName); // intentionally not awaited
   return c.newResponse(null, 404);
 });
