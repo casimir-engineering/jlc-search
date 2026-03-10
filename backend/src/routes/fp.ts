@@ -55,6 +55,90 @@ const COPPER_LAYERS = new Set([1, 2, 11, 100]);
 // Render order for non-fill shapes (PADs, TRACKs, etc.) — body first, then pads on top
 const RENDER_ORDER = [99, 11, 101, 12, 13, 4, 3, 2, 1];
 
+// ── Map-style scale bar algorithm ──────────────────────────────────────────
+
+const MM_PER_MIL = 0.0254;
+
+/** Nice round numbers for metric scale divisions */
+const METRIC_STEPS = [0.125, 0.25, 0.5, 1, 2, 5, 10, 25, 50, 100];
+
+interface ScaleTick {
+  /** Position in mm from bar start (0 = left edge) */
+  positionMM: number;
+  /** Label text (e.g. "5mm" or "100mil") */
+  label: string;
+  /** "major" ticks get full-height marks; "minor" get half-height */
+  type: "major" | "minor";
+  /** Which unit system */
+  system: "metric" | "imperial";
+}
+
+interface ScaleBarSpec {
+  /** Total bar length in mm */
+  barLengthMM: number;
+  /** Metric step size in mm (each alternating segment) */
+  segmentMM: number;
+  /** Number of alternating segments */
+  segmentCount: number;
+  /** All tick marks with positions and labels */
+  ticks: ScaleTick[];
+}
+
+/**
+ * Compute a map-style scale bar for a given footprint width.
+ *
+ * The bar uses alternating black/white segments at nice metric intervals,
+ * with both metric (mm) and imperial (mil) tick labels at round values.
+ *
+ * Target bar length: 30-50% of footprint width.
+ */
+function computeScaleBar(footprintWidthMM: number): ScaleBarSpec {
+  // Target: bar should be 30-60% of footprint width
+  const targetMin = footprintWidthMM * 0.25;
+  const targetMax = footprintWidthMM * 0.65;
+  const targetIdeal = footprintWidthMM * 0.40;
+
+  // Pick the single discrete METRIC_STEPS value closest to ideal within range
+  let bestMM = METRIC_STEPS[0];
+  let bestDist = Infinity;
+  for (const step of METRIC_STEPS) {
+    if (step < targetMin * 0.7 || step > targetMax * 1.3) continue;
+    const dist = Math.abs(step - targetIdeal);
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestMM = step;
+    }
+  }
+  // Fallback: if nothing fit, pick the largest step that's <= footprint width
+  if (bestDist === Infinity) {
+    for (const step of METRIC_STEPS) {
+      if (step <= footprintWidthMM * 0.8) bestMM = step;
+    }
+  }
+
+  // Bar length IS the step value — no multiplication
+  // segmentCount controls the alternating pattern (purely visual)
+  // Pick 2, 4, or 5 visual segments for the alternating pattern
+  let segCount = 4;
+  if (bestMM <= 0.25) segCount = 2;
+  else if (bestMM >= 25) segCount = 5;
+
+  return {
+    barLengthMM: bestMM,
+    segmentMM: bestMM / segCount,
+    segmentCount: segCount,
+    ticks: [],
+  };
+}
+
+/** Format a mm value as a clean label: "0", "0.5mm", "1mm", "10mm" etc. */
+function formatMetric(mm: number): string {
+  if (mm === 0) return "0";
+  const rounded = Math.round(mm * 1000) / 1000;
+  if (rounded === Math.floor(rounded)) return `${Math.floor(rounded)}mm`;
+  return `${rounded}mm`;
+}
+
 function arrayMin(arr: number[]): number {
   let min = Infinity;
   for (const v of arr) if (v < min) min = v;
@@ -66,8 +150,10 @@ function arrayMax(arr: number[]): number {
   return max;
 }
 
-function renderFootprintSvg(data: Record<string, unknown>): string | null {
+function renderFootprintSvg(data: Record<string, unknown>, pkgName?: string): string | null {
   const shapes = (data.shape as string[]) ?? [];
+  const head = data.head as Record<string, unknown> | undefined;
+  const pkgTitle = pkgName || (head?.c_para as Record<string, string>)?.package || "";
 
   // If layer-11 pads exist (connector/THT parts), layer-100 SOLIDREGIONs are internal
   // lead-path geometry (elongated stems between pad rows) — skip them to match JLC view.
@@ -122,11 +208,12 @@ function renderFootprintSvg(data: Record<string, unknown>): string | null {
   const padding = maxDim * 0.12 + 1;
 
   // Extra bottom space for scale bar + SOT-23-6 reference
-  const scaleBarExtra = maxDim * 0.15 + 2;
+  const scaleBarExtra = maxDim * 0.35 + 3;
   const bottomPadding = padding + scaleBarExtra;
 
   const vx = minX - padding, vy = minY - padding;
-  const vw = bw + 2 * padding, vh = bh + padding + bottomPadding;
+  const sotRefWidth = (11.42 + 2.09 * 2) + padding * 0.8; // SOT-23-6 total width + gap
+  const vw = bw + 2 * padding + sotRefWidth, vh = bh + padding + bottomPadding;
 
   // Second pass: build SVG elements grouped by layer
   const byLayer: Record<number, string[]> = {};
@@ -273,29 +360,84 @@ function renderFootprintSvg(data: Record<string, unknown>): string | null {
     );
   }
 
-  // --- Scale bar (always visible) ---
+  // --- Dual-bar map-style scale (metric on top, imperial below, touching) ---
   const scaleEls: string[] = [];
   const footprintWidthMM = bw * UNIT_TO_MM;
-  const scaleOptions = [0.5, 1, 2, 5, 10, 20, 50];
-  let scaleMM = scaleOptions[0];
-  for (const opt of scaleOptions) {
-    if (opt <= footprintWidthMM * 0.4) scaleMM = opt;
+  const spec = computeScaleBar(footprintWidthMM);
+
+  const barUnits = spec.barLengthMM / UNIT_TO_MM;
+  const segUnits = spec.segmentMM / UNIT_TO_MM;
+
+  // Compute imperial bar — pick the largest discrete mil value that fits within the metric bar
+  const barLengthMil = spec.barLengthMM / MM_PER_MIL;
+  const NICE_MIL = [1, 5, 25, 50, 100, 250, 500, 1000];
+  let imperialMil = NICE_MIL[0];
+  for (const m of NICE_MIL) {
+    if (m <= barLengthMil * 0.95) imperialMil = m;
   }
-  const scaleUnits = scaleMM / UNIT_TO_MM;
-  const scaleMil = Math.round(scaleMM / 0.0254);
+  const imperialBarUnits = (imperialMil * MM_PER_MIL) / UNIT_TO_MM;
+
+  // Imperial bar visual segmentation (purely cosmetic alternating pattern)
+  let impSegCount = 2;
+  if (imperialMil >= 250) impSegCount = 5;
+  else if (imperialMil >= 50) impSegCount = 4;
+  else if (imperialMil >= 5) impSegCount = 2;
+  else impSegCount = 1;
+  const impSegUnits = imperialBarUnits / impSegCount;
 
   const scaleSW = Math.max(maxDim * 0.003, 0.15);
-  const tickH = maxDim * 0.05;
-  const scaleCX = minX + bw / 2;
-  const scaleY = maxY + padding * 0.5 + scaleBarExtra * 0.35;
-  const scaleX1 = scaleCX - scaleUnits / 2;
-  const scaleX2 = scaleCX + scaleUnits / 2;
-  const scaleFontSize = Math.max(maxDim * 0.045, 0.8);
+  const barH = Math.max(maxDim * 0.014, scaleSW * 3);
+  const tickExt = Math.max(maxDim * 0.015, barH * 0.5);
+  const scaleFontSize = Math.max(maxDim * 0.055, 1.0);
 
-  scaleEls.push(`<line x1="${scaleX1}" y1="${scaleY}" x2="${scaleX2}" y2="${scaleY}" stroke="#888" stroke-width="${scaleSW}"/>`);
-  scaleEls.push(`<line x1="${scaleX1}" y1="${scaleY - tickH / 2}" x2="${scaleX1}" y2="${scaleY + tickH / 2}" stroke="#888" stroke-width="${scaleSW}"/>`);
-  scaleEls.push(`<line x1="${scaleX2}" y1="${scaleY - tickH / 2}" x2="${scaleX2}" y2="${scaleY + tickH / 2}" stroke="#888" stroke-width="${scaleSW}"/>`);
-  scaleEls.push(`<text x="${scaleCX}" y="${scaleY + tickH / 2 + scaleFontSize * 1.2}" font-size="${scaleFontSize}" fill="#666" text-anchor="middle" font-family="sans-serif">${scaleMM}mm / ${scaleMil}mil</text>`);
+  const scaleCX = minX + bw / 2;
+  const barX0 = scaleCX - barUnits / 2;
+
+  // Vertical layout
+  const scaleTopY = maxY + padding * 0.6;
+  const metricLabelY = scaleTopY;
+  const metricBarY = scaleTopY + scaleFontSize * 0.5;
+  const imperialBarY = metricBarY + barH;           // touching
+  const imperialLabelY = imperialBarY + barH + tickExt + scaleFontSize * 0.9;
+  const pkgLabelY = imperialLabelY + scaleFontSize * 2.5;
+
+  // Metric bar — alternating dark/white segments
+  for (let i = 0; i < spec.segmentCount; i++) {
+    const x = barX0 + i * segUnits;
+    const fill = i % 2 === 0 ? "#444" : "#fff";
+    scaleEls.push(
+      `<rect x="${x}" y="${metricBarY}" width="${segUnits}" height="${barH}" fill="${fill}" stroke="#444" stroke-width="${scaleSW * 0.7}"/>`
+    );
+  }
+
+  // Imperial bar — alternating blue/white segments
+  for (let i = 0; i < impSegCount; i++) {
+    const x = barX0 + i * impSegUnits;
+    const fill = i % 2 === 0 ? "#0066aa" : "#fff";
+    scaleEls.push(
+      `<rect x="${x}" y="${imperialBarY}" width="${impSegUnits}" height="${barH}" fill="${fill}" stroke="#0066aa" stroke-width="${scaleSW * 0.7}"/>`
+    );
+  }
+
+  // Tick marks
+  // Left edge (shared, full height of both bars)
+  scaleEls.push(`<line x1="${barX0}" y1="${metricBarY - tickExt}" x2="${barX0}" y2="${imperialBarY + barH + tickExt}" stroke="#444" stroke-width="${scaleSW}"/>`);
+  // Right edge of metric bar
+  scaleEls.push(`<line x1="${barX0 + barUnits}" y1="${metricBarY - tickExt}" x2="${barX0 + barUnits}" y2="${metricBarY + barH}" stroke="#444" stroke-width="${scaleSW}"/>`);
+  // Right edge of imperial bar
+  scaleEls.push(`<line x1="${barX0 + imperialBarUnits}" y1="${imperialBarY}" x2="${barX0 + imperialBarUnits}" y2="${imperialBarY + barH + tickExt}" stroke="#0066aa" stroke-width="${scaleSW}"/>`);
+
+  // Metric label above bar — right-aligned over the end of the bar
+  const metricLabel = formatMetric(spec.barLengthMM);
+  scaleEls.push(`<text x="${barX0 + barUnits}" y="${metricLabelY}" font-size="${scaleFontSize}" fill="#444" text-anchor="end" font-family="sans-serif">${metricLabel}</text>`);
+
+  // Imperial label below bar — right-aligned over the end of the blue bar
+  scaleEls.push(`<text x="${barX0 + imperialBarUnits}" y="${imperialLabelY}" font-size="${scaleFontSize}" fill="#0066aa" text-anchor="end" font-family="sans-serif">${imperialMil}mil</text>`);
+
+  // Package title with margin below
+  if (pkgTitle) {
+    scaleEls.push(`<text x="${scaleCX}" y="${pkgLabelY}" font-size="${scaleFontSize * 2}" fill="#999" text-anchor="middle" font-family="sans-serif">${pkgTitle}</text>`);
+  }
 
   // --- SOT-23-6 reference (popup only, ≥200px viewport) ---
   const refEls: string[] = [];
@@ -326,17 +468,25 @@ function renderFootprintSvg(data: Record<string, unknown>): string | null {
   const sotLabelY = sotRowHalf + sotPadH / 2 + pin1DotR * 3 + 1.5;
   refEls.push(`<text x="0" y="${sotLabelY}" font-size="2.5" fill="#888" text-anchor="middle" font-family="sans-serif">SOT-23-6</text>`);
 
-  // Center the reference behind the actual footprint
-  const refX = minX + bw / 2;
+  const sotTotalW = sotBodyW + sotPadW * 2; // ~15.6 EasyEDA units
+
+  // Scale SOT-23-6 to match the footprint's coordinate system.
+  // Target: SOT-23-6 should appear at roughly real-world scale relative to the footprint.
+  // The SOT-23-6 is ~3mm × 3mm in real life = ~11.8 × 11.8 EasyEDA units.
+  // No artificial scaling needed — it's already in the same unit system.
+  // Just position it to the right of the footprint, vertically centered.
+  const refX = maxX + padding * 0.8 + sotTotalW / 2;
   const refY = minY + bh / 2;
 
-  const style = `<style>.sot-ref{display:none}@media(min-width:200px){.sot-ref{display:block}}</style>`;
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vx} ${vy} ${vw} ${vh}">${style}<rect x="${vx}" y="${vy}" width="${vw}" height="${vh}" fill="white"/><g class="sot-ref" opacity="0.4" transform="translate(${refX},${refY})">${refEls.join("")}</g>${elements.join("")}${labels.join("")}${scaleEls.join("")}</svg>`;
+  const refGroup = `<g opacity="0.25" transform="translate(${refX},${refY})">${refEls.join("")}</g>`;
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vx} ${vy} ${vw} ${vh}"><rect x="${vx}" y="${vy}" width="${vw}" height="${vh}" fill="white"/>${refGroup}${elements.join("")}${labels.join("")}${scaleEls.join("")}</svg>`;
 }
 
 fpRouter.get("/:lcsc", async (c) => {
   const lcsc = c.req.param("lcsc").toUpperCase();
   if (!/^C\d+$/.test(lcsc)) return c.notFound();
+  const pkgName = c.req.query("pkg") || undefined;
 
   const cachePath = svgCachePath(lcsc);
 
@@ -370,7 +520,7 @@ fpRouter.get("/:lcsc", async (c) => {
       const pkgDataStr = (result?.packageDetail as Record<string, unknown>)?.dataStr;
       if (pkgDataStr) {
         const data = typeof pkgDataStr === "string" ? JSON.parse(pkgDataStr) : pkgDataStr;
-        const svg = renderFootprintSvg(data as Record<string, unknown>);
+        const svg = renderFootprintSvg(data as Record<string, unknown>, pkgName);
         if (svg) {
           mkdirSync(IMG_DIR, { recursive: true });
           writeFileSync(cachePath, svg);

@@ -60,7 +60,7 @@ export const PartCard = memo(function PartCard({ part, showApiData, isFavorite, 
   const [popupPos, setPopupPos] = useState<{ x: number; y: number; src: string } | null>(null);
 
   const schSrc = part.lcsc ? `/api/sch/${part.lcsc}?v=2` : null;
-  const fpSrc = part.lcsc ? `/api/fp/${part.lcsc}?v=8` : null;
+  const fpSrc = part.lcsc ? `/api/fp/${part.lcsc}?v=9${part.package ? `&pkg=${encodeURIComponent(part.package)}` : ''}` : null;
 
   const pcbaType = part.pcba_type && part.pcba_type !== "unknown" ? part.pcba_type : null;
 
