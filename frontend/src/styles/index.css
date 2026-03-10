@@ -302,7 +302,12 @@ code { font-family: monospace; background: #eee; padding: 1px 4px; border-radius
 }
 
 .part-card-fp {
-  height: 56px;
+  height: 48px;
+}
+
+.part-card-sch {
+  height: 48px;
+  background: #fffff8;
 }
 
 .part-card-image img {
@@ -580,6 +585,6 @@ code { font-family: monospace; background: #eee; padding: 1px 4px; border-radius
   .part-card { flex-direction: column; }
   .part-card-images { flex-direction: row; }
   .part-card-image { width: 56px; height: 56px; }
-  .part-card-fp { height: 44px; }
+  .part-card-fp, .part-card-sch { height: 36px; }
   .price-tiers { gap: 0.3rem; }
 }

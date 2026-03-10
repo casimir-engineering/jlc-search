@@ -3,14 +3,21 @@ services:
     image: postgres:17-alpine
     network_mode: host
     environment:
-      POSTGRES_DB: jst
-      POSTGRES_USER: jst
-      POSTGRES_PASSWORD: jst
+      POSTGRES_DB: jlc
+      POSTGRES_USER: jlc
+      POSTGRES_PASSWORD: jlc
     volumes:
       - pg_data:/var/lib/postgresql/data
+    command: >
+      postgres
+      -c shared_buffers=1GB
+      -c work_mem=16MB
+      -c jit=off
+      -c random_page_cost=1.1
+      -c effective_cache_size=4GB
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U jst"]
+      test: ["CMD-SHELL", "pg_isready -U jlc"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -23,7 +30,7 @@ services:
     volumes:
       - img_cache:/app/data/img
     environment:
-      DATABASE_URL: postgres://jst:jst@localhost:5432/jst
+      DATABASE_URL: postgres://jlc:jlc@localhost:5432/jlc
       PORT: "3001"
     depends_on:
       db:
@@ -47,7 +54,7 @@ services:
     volumes:
       - img_cache:/app/data/img
     environment:
-      DATABASE_URL: postgres://jst:jst@localhost:5432/jst
+      DATABASE_URL: postgres://jlc:jlc@localhost:5432/jlc
       JLCPARTS_BASE: https://yaqwsx.github.io/jlcparts
       INGEST_CONCURRENCY: "4"
     depends_on:

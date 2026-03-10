@@ -1,4 +1,4 @@
-# jst-search
+# jlc-search
 
 Fast offline search engine for JLCPCB/LCSC electronic components. Indexes 446k+ parts with full-text search, numeric range filtering, and attribute-enriched search.
 

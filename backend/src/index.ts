@@ -5,6 +5,7 @@ import { partRouter } from "./routes/part.ts";
 import { statusRouter } from "./routes/status.ts";
 import { imgRouter } from "./routes/img.ts";
 import { fpRouter } from "./routes/fp.ts";
+import { schRouter } from "./routes/sch.ts";
 import { pcbaRouter } from "./routes/pcba.ts";
 import { waitForDb, closeDb } from "./db.ts";
 
@@ -17,9 +18,10 @@ app.route("/api/parts", partRouter);
 app.route("/api/status", statusRouter);
 app.route("/api/img", imgRouter);
 app.route("/api/fp", fpRouter);
+app.route("/api/sch", schRouter);
 app.route("/api/pcba", pcbaRouter);
 
-app.get("/", (c) => c.json({ ok: true, service: "jst-search" }));
+app.get("/", (c) => c.json({ ok: true, service: "jlc-search" }));
 
 const port = parseInt(process.env.PORT ?? "3001");
 

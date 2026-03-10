@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "jst-search-ingest",
+      "name": "jlc-search-ingest",
       "dependencies": {
         "postgres": "^3.4.5",
       },

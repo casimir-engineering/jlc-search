@@ -1,7 +1,7 @@
 import postgres from "postgres";
 import { applySchema } from "./schema.ts";
 
-const DATABASE_URL = process.env.DATABASE_URL ?? "postgres://jst:jst@localhost:5432/jst";
+const DATABASE_URL = process.env.DATABASE_URL ?? "postgres://jlc:jlc@localhost:5432/jlc";
 
 let _sql: ReturnType<typeof postgres> | null = null;
 let _ready: Promise<void> | null = null;

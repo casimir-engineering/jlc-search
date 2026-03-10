@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "jst-search-backend",
+      "name": "jlc-search-backend",
       "dependencies": {
         "hono": "^4.6.0",
         "postgres": "^3.4.5",

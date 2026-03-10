@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, memo } from "react";
 import { createPortal } from "react-dom";
 import type { PartSummary } from "../types.ts";
 import { PriceTable } from "./PriceTable.tsx";
@@ -52,30 +52,17 @@ function highlightJson(obj: unknown): string {
 const POPUP_SIZE = 390;
 const POPUP_GAP = 12;
 
-export function PartCard({ part, showApiData, isFavorite, onToggleFavorite }: Props) {
+export const PartCard = memo(function PartCard({ part, showApiData, isFavorite, onToggleFavorite }: Props) {
   const [photoSrc] = useState(part.lcsc ? `/api/img/${part.lcsc}` : null);
   const [photoFailed, setPhotoFailed] = useState(false);
+  const [schFailed, setSchFailed] = useState(false);
   const [fpFailed, setFpFailed] = useState(false);
   const [popupPos, setPopupPos] = useState<{ x: number; y: number; src: string } | null>(null);
-  const [pcbaType, setPcbaType] = useState<string | null>(null);
-  const [asmType, setAsmType] = useState<string | null>(null);
-  const [richDesc, setRichDesc] = useState<string | null>(null);
 
-  const fpSrc = part.lcsc ? `/api/fp/${part.lcsc}?v=6` : null;
+  const schSrc = part.lcsc ? `/api/sch/${part.lcsc}?v=2` : null;
+  const fpSrc = part.lcsc ? `/api/fp/${part.lcsc}?v=8` : null;
 
-  useEffect(() => {
-    if (!part.lcsc) return;
-    const ac = new AbortController();
-    fetch(`/api/pcba/${part.lcsc}`, { signal: ac.signal })
-      .then(r => r.ok ? r.json() : null)
-      .then(d => {
-        if (d?.pcba_type && d.pcba_type !== "unknown") setPcbaType(d.pcba_type);
-        if (d?.assembly_type && d.assembly_type !== "unknown") setAsmType(d.assembly_type);
-        if (d?.description) setRichDesc(d.description);
-      })
-      .catch(() => {});
-    return () => ac.abort();
-  }, [part.lcsc]);
+  const pcbaType = part.pcba_type && part.pcba_type !== "unknown" ? part.pcba_type : null;
 
   const handlePhotoError = () => {
     setPhotoFailed(true);
@@ -130,6 +117,20 @@ export function PartCard({ part, showApiData, isFavorite, onToggleFavorite }: Pr
             />
           </div>
         )}
+        {schSrc && !schFailed && (
+          <div
+            className="part-card-image part-card-sch"
+            onMouseEnter={(e) => handleMouseEnter(e, schSrc)}
+            onMouseLeave={() => setPopupPos(null)}
+          >
+            <img
+              src={schSrc}
+              alt={`${part.mpn} schematic`}
+              loading="lazy"
+              onError={() => setSchFailed(true)}
+            />
+          </div>
+        )}
         {fpSrc && !fpFailed && (
           <div
             className="part-card-image part-card-fp"
@@ -144,7 +145,7 @@ export function PartCard({ part, showApiData, isFavorite, onToggleFavorite }: Pr
             />
           </div>
         )}
-        {photoFailed && fpFailed && (
+        {photoFailed && schFailed && fpFailed && (
           <div className="part-card-image">
             <div className="part-card-image-placeholder">
               <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#ccc" strokeWidth="1.5">
@@ -172,13 +173,12 @@ export function PartCard({ part, showApiData, isFavorite, onToggleFavorite }: Pr
               {pcbaType.includes("Economic") ? "Economic" : "Standard"}
             </span>
           )}
-          {asmType && <span className="badge badge-package">{asmType}</span>}
           {part.package && <span className="badge badge-package">{translatePackage(part.package)}</span>}
         </div>
 
         <div className="part-category">{part.category} › {part.subcategory}</div>
-        {(richDesc || part.description) && (
-          <div className="part-desc">{richDesc || part.description}</div>
+        {part.description && (
+          <div className="part-desc">{part.description}</div>
         )}
 
         <div className="part-meta">
@@ -249,4 +249,4 @@ export function PartCard({ part, showApiData, isFavorite, onToggleFavorite }: Pr
       )}
     </div>
   );
-}
+});

@@ -26,8 +26,7 @@ import {
 } from "./writer.ts";
 import type { PartRow } from "./types.ts";
 
-const DATABASE_URL = process.env.DATABASE_URL ?? "postgres://jst:jst@localhost:5432/jst";
-const PROGRESS_FILE = "data/jlcpcb-progress.json";
+const DATABASE_URL = process.env.DATABASE_URL ?? "postgres://jlc:jlc@localhost:5432/jlc";
 const API_URL =
   "https://jlcpcb.com/api/overseas-pcb-order/v1/shoppingCart/smtGood/selectSmtComponentList";
 const PAGE_SIZE = 100;
@@ -35,6 +34,26 @@ const MAX_PAGES = 1000;
 const MAX_FETCHABLE = MAX_PAGES * PAGE_SIZE; // 100,000
 const DELAY_MS = 300;
 const BATCH_SIZE = 1000;
+
+// CLI: --progress-file <path> to use a custom progress file (for parallel runs)
+const progressFileIdx = process.argv.indexOf("--progress-file");
+const PROGRESS_FILE = progressFileIdx !== -1 && process.argv[progressFileIdx + 1]
+  ? process.argv[progressFileIdx + 1]
+  : "data/jlcpcb-progress.json";
+
+// CLI: --categories "Cat1|Cat2|..." to only process a subset of categories
+// Use | as delimiter since some category names contain commas (e.g. "Crystals, Oscillators, Resonators")
+// Also supports comma delimiter if no pipe is present (backward compat)
+const categoriesIdx = process.argv.indexOf("--categories");
+const CATEGORY_FILTER: string[] | null = categoriesIdx !== -1 && process.argv[categoriesIdx + 1]
+  ? process.argv[categoriesIdx + 1].split(process.argv[categoriesIdx + 1].includes("|") ? "|" : ",").map(s => s.trim()).filter(s => s.length > 0)
+  : null;
+
+// CLI: --no-trigger-mgmt to skip trigger disable/enable/rebuild (for parallel runs; outer loop handles it)
+const NO_TRIGGER_MGMT = process.argv.includes("--no-trigger-mgmt");
+
+// CLI: --instock-only to force stockFlag=1 on ALL queries (only fetch in-stock parts)
+const INSTOCK_ONLY = process.argv.includes("--instock-only");
 
 const CATEGORIES = [
   "Resistors", "Capacitors", "Connectors",
@@ -185,9 +204,14 @@ function buildQueryKey(params: QueryParams): string {
 
 async function buildWorkQueue(): Promise<ApiQuery[]> {
   const queue: ApiQuery[] = [];
+  const categoriesToProcess = CATEGORY_FILTER ?? CATEGORIES;
 
-  for (const category of CATEGORIES) {
-    const catTotal = await fetchTotal({ firstSortName: category });
+  for (const category of categoriesToProcess) {
+    // In --instock-only mode, always filter by stock
+    const baseStock: Pick<QueryParams, "stockFlag"> = INSTOCK_ONLY ? { stockFlag: 1 } : {};
+
+    const catParams: QueryParams = { firstSortName: category, ...baseStock };
+    const catTotal = await fetchTotal(catParams);
 
     if (catTotal === 0) {
       console.log(`[planner] ${category}: 0 parts, skipping`);
@@ -195,7 +219,7 @@ async function buildWorkQueue(): Promise<ApiQuery[]> {
     }
 
     if (catTotal <= MAX_FETCHABLE) {
-      const params: QueryParams = { firstSortName: category };
+      const params: QueryParams = { firstSortName: category, ...baseStock };
       queue.push({ key: buildQueryKey(params), label: `${category} [${catTotal.toLocaleString()}]`, params });
       console.log(`[planner] ${category}: ${catTotal.toLocaleString()} — single query`);
       continue;
@@ -207,7 +231,7 @@ async function buildWorkQueue(): Promise<ApiQuery[]> {
     console.log(`  Found ${subcategories.length} subcategories`);
 
     for (const sub of subcategories) {
-      const subParams: QueryParams = { firstSortName: category, secondSortName: sub };
+      const subParams: QueryParams = { firstSortName: category, secondSortName: sub, ...baseStock };
       const subTotal = await fetchTotal(subParams);
 
       if (subTotal <= MAX_FETCHABLE) {
@@ -220,7 +244,19 @@ async function buildWorkQueue(): Promise<ApiQuery[]> {
         continue;
       }
 
-      // Subcategory too large — add in-stock query + capped all-parts query
+      // Subcategory still too large (even with instock filter) — add capped query
+      // In instock-only mode, we can't split further, so just cap at 100k
+      if (INSTOCK_ONLY) {
+        queue.push({
+          key: buildQueryKey(subParams),
+          label: `${category} > ${sub} [capped at 100k of ${subTotal.toLocaleString()}]`,
+          params: subParams,
+        });
+        console.log(`  ${sub}: ${subTotal.toLocaleString()} — capped at 100k (instock-only)`);
+        continue;
+      }
+
+      // Not instock-only: add in-stock query + capped all-parts query
       const instockParams: QueryParams = { ...subParams, stockFlag: 1 };
       const instockTotal = await fetchTotal(instockParams);
 
@@ -334,9 +370,11 @@ function getResumeInfo(progress: Progress, key: string): { startPage: number } |
 let stopping = false;
 
 async function cleanup(sql: ReturnType<typeof postgres>, progress: Progress) {
-  console.log("\n  Rebuilding search vectors for inserted parts...");
-  await rebuildSearchVectors(sql);
-  await enableSearchTrigger(sql);
+  if (!NO_TRIGGER_MGMT) {
+    console.log("\n  Rebuilding search vectors for inserted parts...");
+    await rebuildSearchVectors(sql);
+    await enableSearchTrigger(sql);
+  }
   saveProgress(progress);
   console.log(`  Progress saved. Resume with: bun run ingest/src/jlcpcb-api.ts`);
   await sql.end();
@@ -355,7 +393,7 @@ async function main() {
   const existingCount = Number(existing?.cnt ?? 0);
   console.log(`Existing parts in DB: ${existingCount.toLocaleString()}`);
 
-  await disableSearchTrigger(sql);
+  if (!NO_TRIGGER_MGMT) await disableSearchTrigger(sql);
 
   let progress = loadProgress();
   if (isFresh) {
@@ -483,8 +521,10 @@ async function main() {
   }
 
   // Rebuild search vectors and re-enable trigger
-  await rebuildSearchVectors(sql);
-  await enableSearchTrigger(sql);
+  if (!NO_TRIGGER_MGMT) {
+    await rebuildSearchVectors(sql);
+    await enableSearchTrigger(sql);
+  }
 
   // Final stats
   const [finalRow] = await sql`SELECT COUNT(*) AS cnt FROM parts`;

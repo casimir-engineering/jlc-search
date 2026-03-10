@@ -12,7 +12,7 @@ import {
   rebuildSearchVectors,
 } from "./writer.ts";
 
-const DATABASE_URL = process.env.DATABASE_URL ?? "postgres://jst:jst@localhost:5432/jst";
+const DATABASE_URL = process.env.DATABASE_URL ?? "postgres://jlc:jlc@localhost:5432/jlc";
 const JLCPARTS_BASE =
   process.env.JLCPARTS_BASE ?? "https://yaqwsx.github.io/jlcparts";
 const CONCURRENCY = parseInt(process.env.INGEST_CONCURRENCY ?? "4");
@@ -48,7 +48,7 @@ interface WorkItem {
 }
 
 async function main() {
-  console.log(`jst-search ingest`);
+  console.log(`jlc-search ingest`);
   console.log(`DB: ${DATABASE_URL.replace(/:[^:@]+@/, ":***@")}`);
   console.log(`Source: ${JLCPARTS_BASE}`);
 

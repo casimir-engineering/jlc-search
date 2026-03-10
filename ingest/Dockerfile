@@ -12,7 +12,7 @@ COPY backend/src/ ./backend/src/
 COPY ingest/tsconfig.json ./ingest/
 COPY ingest/src/ ./ingest/src/
 
-ENV DATABASE_URL=postgres://jst:jst@localhost:5432/jst
+ENV DATABASE_URL=postgres://jlc:jlc@localhost:5432/jlc
 ENV JLCPARTS_BASE=https://yaqwsx.github.io/jlcparts
 ENV INGEST_CONCURRENCY=4
 

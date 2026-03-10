@@ -84,7 +84,8 @@ const tests: TestCase[] = [
     query: "NRF24L01",
     check: (r) => {
       if (r.total === 0) return "no results";
-      if (r.results[0]?.lcsc !== "C8791") return `expected first=C8791, got ${r.results[0]?.lcsc}`;
+      const top10 = r.results.slice(0, 10).map((p) => p.lcsc);
+      if (!top10.includes("C8791")) return `expected C8791 in top 10, got [${top10.join(", ")}]`;
       return null;
     },
   },

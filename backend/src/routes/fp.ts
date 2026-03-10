@@ -55,6 +55,17 @@ const COPPER_LAYERS = new Set([1, 2, 11, 100]);
 // Render order for non-fill shapes (PADs, TRACKs, etc.) — body first, then pads on top
 const RENDER_ORDER = [99, 11, 101, 12, 13, 4, 3, 2, 1];
 
+function arrayMin(arr: number[]): number {
+  let min = Infinity;
+  for (const v of arr) if (v < min) min = v;
+  return min;
+}
+function arrayMax(arr: number[]): number {
+  let max = -Infinity;
+  for (const v of arr) if (v > max) max = v;
+  return max;
+}
+
 function renderFootprintSvg(data: Record<string, unknown>): string | null {
   const shapes = (data.shape as string[]) ?? [];
 
@@ -102,13 +113,20 @@ function renderFootprintSvg(data: Record<string, unknown>): string | null {
 
   if (allX.length === 0) return null;
 
-  const minX = Math.min(...allX), maxX = Math.max(...allX);
-  const minY = Math.min(...allY), maxY = Math.max(...allY);
+  const UNIT_TO_MM = 0.254;
+
+  const minX = arrayMin(allX), maxX = arrayMax(allX);
+  const minY = arrayMin(allY), maxY = arrayMax(allY);
   const bw = maxX - minX || 10, bh = maxY - minY || 10;
-  const padding = Math.max(bw, bh) * 0.12 + 1;
+  const maxDim = Math.max(bw, bh);
+  const padding = maxDim * 0.12 + 1;
+
+  // Extra bottom space for scale bar + SOT-23-6 reference
+  const scaleBarExtra = maxDim * 0.15 + 2;
+  const bottomPadding = padding + scaleBarExtra;
 
   const vx = minX - padding, vy = minY - padding;
-  const vw = bw + 2 * padding, vh = bh + 2 * padding;
+  const vw = bw + 2 * padding, vh = bh + padding + bottomPadding;
 
   // Second pass: build SVG elements grouped by layer
   const byLayer: Record<number, string[]> = {};
@@ -255,7 +273,65 @@ function renderFootprintSvg(data: Record<string, unknown>): string | null {
     );
   }
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vx} ${vy} ${vw} ${vh}"><rect x="${vx}" y="${vy}" width="${vw}" height="${vh}" fill="white"/>${elements.join("")}${labels.join("")}</svg>`;
+  // --- Scale bar (always visible) ---
+  const scaleEls: string[] = [];
+  const footprintWidthMM = bw * UNIT_TO_MM;
+  const scaleOptions = [0.5, 1, 2, 5, 10, 20, 50];
+  let scaleMM = scaleOptions[0];
+  for (const opt of scaleOptions) {
+    if (opt <= footprintWidthMM * 0.4) scaleMM = opt;
+  }
+  const scaleUnits = scaleMM / UNIT_TO_MM;
+  const scaleMil = Math.round(scaleMM / 0.0254);
+
+  const scaleSW = Math.max(maxDim * 0.003, 0.15);
+  const tickH = maxDim * 0.05;
+  const scaleCX = minX + bw / 2;
+  const scaleY = maxY + padding * 0.5 + scaleBarExtra * 0.35;
+  const scaleX1 = scaleCX - scaleUnits / 2;
+  const scaleX2 = scaleCX + scaleUnits / 2;
+  const scaleFontSize = Math.max(maxDim * 0.045, 0.8);
+
+  scaleEls.push(`<line x1="${scaleX1}" y1="${scaleY}" x2="${scaleX2}" y2="${scaleY}" stroke="#888" stroke-width="${scaleSW}"/>`);
+  scaleEls.push(`<line x1="${scaleX1}" y1="${scaleY - tickH / 2}" x2="${scaleX1}" y2="${scaleY + tickH / 2}" stroke="#888" stroke-width="${scaleSW}"/>`);
+  scaleEls.push(`<line x1="${scaleX2}" y1="${scaleY - tickH / 2}" x2="${scaleX2}" y2="${scaleY + tickH / 2}" stroke="#888" stroke-width="${scaleSW}"/>`);
+  scaleEls.push(`<text x="${scaleCX}" y="${scaleY + tickH / 2 + scaleFontSize * 1.2}" font-size="${scaleFontSize}" fill="#666" text-anchor="middle" font-family="sans-serif">${scaleMM}mm / ${scaleMil}mil</text>`);
+
+  // --- SOT-23-6 reference (popup only, ≥200px viewport) ---
+  const refEls: string[] = [];
+  // SOT-23-6 dimensions in EasyEDA units
+  const sotBodyW = 11.42, sotBodyH = 6.30;
+  const sotPadW = 2.09, sotPadH = 4.22;
+  const sotPitch = 3.74;
+  const sotRowHalf = 9.048 / 2; // 4.524 — half of row center-to-center spacing
+  const sotPads: [number, number][] = [
+    [-sotPitch, sotRowHalf],   // pin 1 — bottom-left
+    [0, sotRowHalf],           // pin 2 — bottom-center
+    [sotPitch, sotRowHalf],    // pin 3 — bottom-right
+    [sotPitch, -sotRowHalf],   // pin 4 — top-right
+    [0, -sotRowHalf],          // pin 5 — top-center
+    [-sotPitch, -sotRowHalf],  // pin 6 — top-left
+  ];
+
+  // Body rect
+  refEls.push(`<rect x="${-sotBodyW / 2}" y="${-sotBodyH / 2}" width="${sotBodyW}" height="${sotBodyH}" fill="#f0f0f0" stroke="#999" stroke-width="0.3"/>`);
+  // Pads
+  for (const [px, py] of sotPads) {
+    refEls.push(`<rect x="${px - sotPadW / 2}" y="${py - sotPadH / 2}" width="${sotPadW}" height="${sotPadH}" fill="#c87137"/>`);
+  }
+  // Pin-1 dot marker
+  const pin1DotR = sotPadW * 0.25;
+  refEls.push(`<circle cx="${sotPads[0][0]}" cy="${sotPads[0][1] + sotPadH / 2 + pin1DotR * 1.5}" r="${pin1DotR}" fill="#888"/>`);
+  // Label below
+  const sotLabelY = sotRowHalf + sotPadH / 2 + pin1DotR * 3 + 1.5;
+  refEls.push(`<text x="0" y="${sotLabelY}" font-size="2.5" fill="#888" text-anchor="middle" font-family="sans-serif">SOT-23-6</text>`);
+
+  // Center the reference behind the actual footprint
+  const refX = minX + bw / 2;
+  const refY = minY + bh / 2;
+
+  const style = `<style>.sot-ref{display:none}@media(min-width:200px){.sot-ref{display:block}}</style>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vx} ${vy} ${vw} ${vh}">${style}<rect x="${vx}" y="${vy}" width="${vw}" height="${vh}" fill="white"/><g class="sot-ref" opacity="0.4" transform="translate(${refX},${refY})">${refEls.join("")}</g>${elements.join("")}${labels.join("")}${scaleEls.join("")}</svg>`;
 }
 
 fpRouter.get("/:lcsc", async (c) => {

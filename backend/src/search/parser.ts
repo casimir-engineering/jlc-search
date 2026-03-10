@@ -11,15 +11,29 @@ function sanitize(tok: string): string {
 }
 
 /**
+ * Should this token use prefix matching (:*)?
+ * Yes for part-number-like tokens (contain digits, dots, or hyphens).
+ * No for plain alpha words — exact match avoids scanning 100k+ rows.
+ * Short pure-alpha tokens like "smd" (730k), "led" (85k) are too broad for prefix.
+ */
+function needsPrefix(tok: string): boolean {
+  if (/[\d.\-]/.test(tok)) return true;
+  if (tok.length <= 2) return true;
+  return false;
+}
+
+/**
  * Convert a single search token into a tsquery expression fragment.
  * The 'simple' dictionary preserves dots and hyphens in tokens
  * (e.g. "1.25" stays as one token, "RC0402JR-07100KL" becomes both
- * the full form and sub-tokens). So we keep the token as-is with :* prefix.
+ * the full form and sub-tokens).
+ * Only part-number-like tokens get :* prefix to avoid expensive
+ * prefix scans on common English words.
  */
 function tokenToTsExpr(tok: string): string {
   const clean = sanitize(tok);
   if (!clean) return "";
-  return `${clean}:*`;
+  return needsPrefix(clean) ? `${clean}:*` : clean;
 }
 
 /**
@@ -36,7 +50,7 @@ export function buildTsQuery(text: string, phrases: string[] = []): string {
 
   for (const phrase of phrases) {
     const words = sanitize(phrase).split(/\s+/).filter(Boolean);
-    if (words.length > 0) exprs.push(`(${words.map(w => `${w}:*`).join(" <-> ")})`);
+    if (words.length > 0) exprs.push(`(${words.map(w => needsPrefix(w) ? `${w}:*` : w).join(" <-> ")})`);
   }
 
   return exprs.join(" & ") || "";
@@ -62,7 +76,7 @@ export function buildTsOrQuery(text: string, phrases: string[] = []): string {
   for (const phrase of phrases) {
     const words = sanitize(phrase).split(/\s+/).filter(Boolean);
     if (words.length > 0) {
-      const pe = `(${words.map(w => `${w}:*`).join(" <-> ")})`;
+      const pe = `(${words.map(w => needsPrefix(w) ? `${w}:*` : w).join(" <-> ")})`;
       result = result ? `${result} & ${pe}` : pe;
     }
   }

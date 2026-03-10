@@ -71,7 +71,7 @@ export function App() {
     <div className={`app ${hasResults ? "app-results-mode" : "app-home-mode"}`}>
       <header className="app-header">
         <div className="app-logo">
-          <span className="logo-text">jst-search</span>
+          <span className="logo-text">jlc-search</span>
           <span className="logo-sub">JLCPCB parts</span>
         </div>
 

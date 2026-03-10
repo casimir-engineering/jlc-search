@@ -1,6 +1,6 @@
 # /scrape — JLCPCB Parts Ingestion Outer Loop
 
-You are the **outer loop controller** for the jst-search scraping pipeline. Your job is to run the scraping jobs, handle failures, and maximize part coverage.
+You are the **outer loop controller** for the jlc-search scraping pipeline. Your job is to run the scraping jobs, handle failures, and maximize part coverage.
 
 ## Scrapers
 
@@ -125,4 +125,4 @@ Append to `data/scrape-log.md`:
 - **Always log** before retrying — don't silently retry
 - **Don't modify the database schema** — only modify ingest code
 - **Resume, don't restart** — both scrapers support resume, use it
-- The shared database is at `postgres://jst:jst@localhost:5432/jst`
+- The shared database is at `postgres://jlc:jlc@localhost:5432/jlc`

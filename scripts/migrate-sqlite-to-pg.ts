@@ -13,7 +13,7 @@ import { applySchema } from "../backend/src/schema.ts";
 import { extractNumericAttrs } from "../ingest/src/attrs.ts";
 
 const DB_PATH = process.env.DB_PATH ?? "data/parts.db";
-const DATABASE_URL = process.env.DATABASE_URL ?? "postgres://jst:jst@localhost:5432/jst";
+const DATABASE_URL = process.env.DATABASE_URL ?? "postgres://jlc:jlc@localhost:5432/jlc";
 
 const CHUNK = 1000;
 const NUM_CHUNK = 5000;

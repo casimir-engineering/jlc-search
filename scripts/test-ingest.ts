@@ -18,7 +18,7 @@ import {
 } from "../ingest/src/writer.ts";
 import type { PartRow } from "../ingest/src/types.ts";
 
-const DATABASE_URL = process.env.DATABASE_URL ?? "postgres://jst:jst@localhost:5432/jst";
+const DATABASE_URL = process.env.DATABASE_URL ?? "postgres://jlc:jlc@localhost:5432/jlc";
 const PREFIX = "CTEST";
 
 function makePart(id: number, overrides?: Partial<PartRow>): PartRow {

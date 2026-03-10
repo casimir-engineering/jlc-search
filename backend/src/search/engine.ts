@@ -1,6 +1,6 @@
 import { getSql } from "../db.ts";
 import {
-  buildTsQuery, buildTsOrQuery, buildNegationTsQuery,
+  buildTsQuery, buildNegationTsQuery,
   detectLcscCode, parseQuery, type RangeFilter,
 } from "./parser.ts";
 import type { PartSummary, SearchParams } from "../types.ts";
@@ -185,9 +185,8 @@ export async function search(params: SearchParams): Promise<{ results: PartSumma
   // Path 2: Full-text search
   const textQuery = parsed.text;
   const andQ = buildTsQuery(textQuery, parsed.phrases);
-  const orQ = buildTsOrQuery(textQuery, parsed.phrases);
 
-  if (!andQ && !orQ) return { results: [], total: 0 };
+  if (!andQ) return { results: [], total: 0 };
 
   const isMultiToken = !params.matchAll && textQuery.includes(" ");
 
@@ -200,7 +199,7 @@ export async function search(params: SearchParams): Promise<{ results: PartSumma
   let fetchOffset: number;
 
   if (isRelevanceSort) {
-    fetchLimit = RERANK_LIMIT;
+    fetchLimit = Math.max(RERANK_LIMIT, offset + limit);
     fetchOffset = 0;
   } else if (isPriceSort) {
     fetchLimit = limit * 10;
@@ -228,14 +227,9 @@ export async function search(params: SearchParams): Promise<{ results: PartSumma
     if (!isMultiToken || andRows.length >= fetchLimit) {
       // AND query has enough results — use it directly
       rows = andRows;
-      // Estimate total: if we got a full page, there's likely more
+      // Estimate total using sentinel: if we filled fetchLimit, signal "there are more"
       if (rows.length >= fetchLimit) {
-        const countRows = await sql`
-          SELECT COUNT(*) AS cnt FROM parts p
-          WHERE p.search_vec @@ to_tsquery('simple', ${andQ})
-          ${rangeFilter} ${colFilter} ${typeFilter} ${stockFilter} ${negFilter}
-        `;
-        total = Number(countRows[0]?.cnt ?? 0);
+        total = fetchOffset + fetchLimit + 1;
       } else {
         total = fetchOffset + rows.length;
       }
@@ -248,21 +242,25 @@ export async function search(params: SearchParams): Promise<{ results: PartSumma
       const needed = fetchLimit - andRows.length;
 
       if (tokens.length >= 2 && needed > 0) {
-        // Try dropping one token at a time, shortest first
-        const sorted = [...tokens].sort((a, b) => a.length - b.length);
-        for (const drop of sorted) {
+        // Drop one token at a time, longest first (most specific) — keeps
+        // shorter/common tokens that narrow results, better perf.
+        // Cap at 3 sub-queries to bound total work.
+        const sorted = [...tokens].sort((a, b) => b.length - a.length);
+        for (const drop of sorted.slice(0, 3)) {
           if (tier1Rows.length >= needed) break;
           const remaining = tokens.filter((t) => t !== drop);
           const subQ = buildTsQuery(remaining.join(" "), parsed.phrases);
           if (!subQ || subQ === andQ) continue;
+          // Tier-1 (demoted) results: order by stock instead of rank
+          // to avoid expensive ts_rank_cd on broad result sets
           const subRows = await sql`
             SELECT ${sql.unsafe(SELECT_COLS)},
-              ts_rank_cd(${sql.unsafe(`'${TS_WEIGHTS}'`)}, p.search_vec, to_tsquery('simple', ${subQ})) AS rank
+              0 AS rank
             FROM parts p
             WHERE p.search_vec @@ to_tsquery('simple', ${subQ})
               AND NOT p.search_vec @@ to_tsquery('simple', ${andQ})
             ${rangeFilter} ${colFilter} ${typeFilter} ${stockFilter} ${negFilter}
-            ORDER BY ${orderByRank}
+            ORDER BY p.stock DESC
             LIMIT ${needed - tier1Rows.length}
           `;
           for (const r of subRows) {
@@ -303,20 +301,42 @@ export async function search(params: SearchParams): Promise<{ results: PartSumma
       const tokens = textQuery.split(/\s+/).filter(Boolean);
       if (tokens.length > 0) {
         const pattern = `%${tokens.join("%")}%`;
-        const fuzzyRows = await sql`
+        const seen = new Set(results.map((r) => r.lcsc));
+
+        // First: mpn ILIKE (uses idx_parts_mpn_trgm, fast ~1ms)
+        const fuzzyMpnRows = await sql`
           SELECT ${sql.unsafe(SELECT_COLS)}
           FROM parts p
-          WHERE (p.mpn ILIKE ${pattern} OR p.description ILIKE ${pattern})
+          WHERE p.mpn ILIKE ${pattern}
           ${rangeFilter} ${colFilter} ${typeFilter} ${stockFilter} ${negFilter}
           LIMIT ${limit}
         `;
-        const seen = new Set(results.map((r) => r.lcsc));
-        for (const r of fuzzyRows) {
+        for (const r of fuzzyMpnRows) {
           if (!seen.has(r.lcsc as string)) {
             results.push({ ...(r as unknown as PartSummary), score: 0 });
             seen.add(r.lcsc as string);
           }
         }
+
+        // Only if still need more: description ILIKE (slower, no trgm index)
+        if (results.length < 5) {
+          const excludeLcscs = [...seen];
+          const fuzzyDescRows = await sql`
+            SELECT ${sql.unsafe(SELECT_COLS)}
+            FROM parts p
+            WHERE p.description ILIKE ${pattern}
+              AND p.lcsc != ALL(${excludeLcscs})
+            ${rangeFilter} ${colFilter} ${typeFilter} ${stockFilter} ${negFilter}
+            LIMIT ${limit}
+          `;
+          for (const r of fuzzyDescRows) {
+            if (!seen.has(r.lcsc as string)) {
+              results.push({ ...(r as unknown as PartSummary), score: 0 });
+              seen.add(r.lcsc as string);
+            }
+          }
+        }
+
         total = Math.max(total, results.length);
       }
     }
