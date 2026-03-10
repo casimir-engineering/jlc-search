@@ -46,12 +46,12 @@ const LAYER_STYLES: Record<number, { stroke: string; fill: string; strokeWidth?:
   12:  { stroke: "#cc00cc", fill: "none",    strokeWidth: 0.15, strokeDasharray: "2 2" },  // top courtyard (magenta)
   13:  { stroke: "#0077cc", fill: "none",    strokeWidth: 0.15, strokeDasharray: "2 2" },  // bottom courtyard (blue)
   99:  { stroke: "#aaaaaa", fill: "#e8e8e8" },                                              // component body (light gray)
-  100: { stroke: "none",    fill: "#5f8c5a" },                                              // multi-layer / exposed pad (green)
+  100: { stroke: "none",    fill: "#c87137" },                                              // multi-layer exposed pad (copper, PADs only — SOLIDREGIONs skipped)
   101: { stroke: "#cccccc", fill: "none",    strokeWidth: 0.1 },                           // component boundary
 };
 
 // Copper SOLIDREGIONs render behind body; PADs/TRACKs render on top
-const COPPER_LAYERS = new Set([1, 2, 11, 100]);
+const COPPER_LAYERS = new Set([1, 2, 11]);
 // Render order for non-fill shapes (PADs, TRACKs, etc.) — body first, then pads on top
 const RENDER_ORDER = [99, 11, 101, 12, 13, 4, 3, 2, 1];
 
@@ -155,13 +155,6 @@ function renderFootprintSvg(data: Record<string, unknown>, pkgName?: string): st
   const head = data.head as Record<string, unknown> | undefined;
   const pkgTitle = pkgName || (head?.c_para as Record<string, string>)?.package || "";
 
-  // If layer-11 pads exist (connector/THT parts), layer-100 SOLIDREGIONs are internal
-  // lead-path geometry (elongated stems between pad rows) — skip them to match JLC view.
-  const hasLayer11Pads = shapes.some(s => {
-    const f = s.split("~");
-    return f[0] === "PAD" && f[6] === "11";
-  });
-
   const allX: number[] = [];
   const allY: number[] = [];
 
@@ -171,7 +164,7 @@ function renderFootprintSvg(data: Record<string, unknown>, pkgName?: string): st
     const type = f[0];
 
     if (type === "PAD") {
-      // PAD~shape~cx~cy~w~h~layer~~pin~angle~hole~points~...
+      // PAD~shape~cx~cy~w~h~layer~net~pin~holeR~points~rotation~id~...
       const pts = f[10]?.trim().split(/\s+/).filter(Boolean).map(Number) ?? [];
       if (pts.length >= 4) {
         for (let i = 0; i + 1 < pts.length; i += 2) { allX.push(pts[i]); allY.push(pts[i + 1]); }
@@ -237,7 +230,7 @@ function renderFootprintSvg(data: Record<string, unknown>, pkgName?: string): st
       const padShape = f[1];
       const cx = parseFloat(f[2]), cy = parseFloat(f[3]);
       const w = parseFloat(f[4]), h = parseFloat(f[5]);
-      const angle = parseFloat(f[9]) || 0;
+      const angle = parseFloat(f[11]) || 0;
       if (isNaN(cx)) continue;
 
       const pin = f[8]?.trim();
@@ -321,8 +314,12 @@ function renderFootprintSvg(data: Record<string, unknown>, pkgName?: string): st
       }
     } else if (type === "SOLIDREGION") {
       const layer = parseInt(f[1]);
-      // Skip layer-100 fills when layer-11 pads handle the visual (connector lead geometry)
-      if (layer === 100 && hasLayer11Pads) continue;
+      // Layer-100 SOLIDREGIONs are paste-stencil / multi-layer geometry — never
+      // useful in a footprint preview (they render as green bars behind pads).
+      if (layer === 100) continue;
+      // "cutout" SOLIDREGIONs are mask openings, not filled copper — skip them.
+      const subtype = f[4]?.trim();
+      if (subtype === "cutout") continue;
       const s = LAYER_STYLES[layer];
       if (!s) continue;
 
@@ -356,7 +353,7 @@ function renderFootprintSvg(data: Record<string, unknown>, pkgName?: string): st
     const fitByH = h * 0.63;
     const fontSize = Math.max(Math.min(fitByW, fitByH), minFontSize);
     labels.push(
-      `<text x="${cx}" y="${cy}" font-size="${fontSize.toFixed(2)}" fill="white" text-anchor="middle" dominant-baseline="central" font-family="sans-serif" font-weight="bold">${pin}</text>`
+      `<text x="${cx}" y="${cy}" font-size="${fontSize.toFixed(2)}" fill="rgba(0,0,255,0.7)" text-anchor="middle" dominant-baseline="central" font-family="sans-serif" font-weight="bold">${pin}</text>`
     );
   }
 
