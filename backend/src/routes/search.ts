@@ -9,7 +9,7 @@ searchRouter.get("/", async (c) => {
   const partType = c.req.queries("partType") ?? [];
   const inStock = c.req.query("inStock") === "true";
   const fuzzy = c.req.query("fuzzy") === "true";
-  const limit = Math.min(parseInt(c.req.query("limit") ?? "50"), 100);
+  const limit = Math.min(parseInt(c.req.query("limit") ?? "50"), 200);
   const offset = parseInt(c.req.query("offset") ?? "0");
   const sortRaw = c.req.query("sort") ?? "relevance";
   const sort = ["relevance", "price_asc", "price_desc", "stock_desc", "stock_asc"].includes(sortRaw)

@@ -27,9 +27,19 @@ export async function applySchema(sql: Sql): Promise<void> {
     )
   `;
 
+  // Add full_text column for trigram substring search
+  await sql`
+    DO $$ BEGIN
+      ALTER TABLE parts ADD COLUMN full_text TEXT NOT NULL DEFAULT '';
+    EXCEPTION WHEN duplicate_column THEN NULL;
+    END $$
+  `;
+
   // Indexes
   await sql`CREATE INDEX IF NOT EXISTS idx_parts_search ON parts USING GIN(search_vec)`;
   await sql`CREATE INDEX IF NOT EXISTS idx_parts_mpn_trgm ON parts USING GIN(mpn gin_trgm_ops)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_parts_mfr_trgm ON parts USING GIN(manufacturer gin_trgm_ops)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_parts_fulltext_trgm ON parts USING GIN(full_text gin_trgm_ops)`;
   await sql`CREATE INDEX IF NOT EXISTS idx_parts_mpn ON parts(mpn)`;
   await sql`CREATE INDEX IF NOT EXISTS idx_parts_type ON parts(part_type)`;
   await sql`CREATE INDEX IF NOT EXISTS idx_parts_stock ON parts(stock)`;
@@ -47,6 +57,10 @@ export async function applySchema(sql: Sql): Promise<void> {
         setweight(to_tsvector('simple', coalesce(NEW.subcategory, '')), 'C') ||
         setweight(to_tsvector('simple', coalesce(NEW.search_text, '')), 'C') ||
         setweight(to_tsvector('simple', coalesce(NEW.package, '')), 'D');
+      NEW.full_text := lower(concat_ws(' ', NEW.lcsc, NEW.mpn,
+        coalesce(NEW.manufacturer, ''), NEW.description,
+        coalesce(NEW.subcategory, ''), coalesce(NEW.search_text, ''),
+        coalesce(NEW.package, '')));
       RETURN NEW;
     END;
     $$ LANGUAGE plpgsql

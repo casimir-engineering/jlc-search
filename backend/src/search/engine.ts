@@ -11,10 +11,13 @@ const SELECT_COLS = `
   p.category, p.subcategory, p.datasheet
 `;
 
-const TS_WEIGHTS = "{0.1, 0.2, 0.4, 1.0}"; // D, C, B, A
+function escapeIlike(s: string): string {
+  return s.replace(/[%_\\]/g, '\\$&');
+}
 
 function applyBoost(results: (PartSummary & { score: number })[], q: string): (PartSummary & { score: number })[] {
   const qLower = q.toLowerCase().trim();
+  const qTokens = qLower.split(/\s+/).filter(Boolean);
   return results
     .map((r) => {
       let boost = r.score;
@@ -24,6 +27,14 @@ function applyBoost(results: (PartSummary & { score: number })[], q: string): (P
       else if (mpnLower === qLower) boost += 800;
       else if (mpnLower.startsWith(qLower)) boost += 400;
       else if (lcscLower.startsWith(qLower)) boost += 300;
+      // Field-match boost: approximate ts_rank_cd weight classes in app layer
+      if (qTokens.length > 1) {
+        const descLower = (r.description || "").toLowerCase();
+        for (const tok of qTokens) {
+          if (mpnLower.includes(tok)) boost += 50;
+          else if (descLower.includes(tok)) boost += 20;
+        }
+      }
       if (r.part_type === "Basic") boost += 50;
       else if (r.part_type === "Preferred") boost += 25;
       const lcscNum = parseInt(r.lcsc.slice(1)) || 9999999;
@@ -136,7 +147,6 @@ export async function search(params: SearchParams): Promise<{ results: PartSumma
 
   const isRelevanceSort = params.sort === "relevance";
   const isPriceSort = params.sort === "price_asc" || params.sort === "price_desc";
-  const RERANK_LIMIT = 300;
 
   // Path 1: Exact LCSC lookup
   if (!hasAnyFilter && !parsed.phrases.length && !parsed.negations.length && detectLcscCode(parsed.text || trimmed)) {
@@ -182,7 +192,7 @@ export async function search(params: SearchParams): Promise<{ results: PartSumma
 
   if (!hasTextContent) return { results: [], total: 0 };
 
-  // Path 2: Full-text search
+  // Path 2: Tiered full-text search
   const textQuery = parsed.text;
   const andQ = buildTsQuery(textQuery, parsed.phrases);
 
@@ -190,158 +200,182 @@ export async function search(params: SearchParams): Promise<{ results: PartSumma
 
   const isMultiToken = !params.matchAll && textQuery.includes(" ");
 
-  // Build ORDER BY based on sort mode
-  const orderByRank = params.sort === "stock_asc" ? sql`p.stock ASC`
-    : params.sort === "stock_desc" ? sql`p.stock DESC`
-    : sql`rank DESC`;
-
-  let fetchLimit: number;
-  let fetchOffset: number;
-
-  if (isRelevanceSort) {
-    fetchLimit = Math.max(RERANK_LIMIT, offset + limit);
-    fetchOffset = 0;
-  } else if (isPriceSort) {
-    fetchLimit = limit * 10;
-    fetchOffset = 0;
-  } else {
-    fetchLimit = limit + 1; // +1 to detect hasMore
-    fetchOffset = offset;
-  }
+  // Keep limits modest so Tier 1 (substring) results appear within reach.
+  // Tier 0 ORDER BY stock DESC is fast regardless of limit (B-tree index scan).
+  const TIER0_LIMIT = 150;
+  const TIER1_LIMIT = 200;
 
   try {
-    let rows: Record<string, unknown>[];
-    let total: number;
-
-    // Always try AND query first — it's fast and precise
-    const andRows = await sql`
-      SELECT ${sql.unsafe(SELECT_COLS)},
-        ts_rank_cd(${sql.unsafe(`'${TS_WEIGHTS}'`)}, p.search_vec, to_tsquery('simple', ${andQ})) AS rank
+    // ── Tier 0: FTS prefix match (fast, highest quality) ──────────
+    const tier0Rows = await sql`
+      SELECT ${sql.unsafe(SELECT_COLS)}
       FROM parts p
       WHERE p.search_vec @@ to_tsquery('simple', ${andQ})
       ${rangeFilter} ${colFilter} ${typeFilter} ${stockFilter} ${negFilter}
-      ORDER BY ${orderByRank}
-      LIMIT ${fetchLimit} OFFSET ${fetchOffset}
+      ORDER BY p.stock DESC
+      LIMIT ${TIER0_LIMIT}
     `;
 
-    if (!isMultiToken || andRows.length >= fetchLimit) {
-      // AND query has enough results — use it directly
-      rows = andRows;
-      // Estimate total using sentinel: if we filled fetchLimit, signal "there are more"
-      if (rows.length >= fetchLimit) {
-        total = fetchOffset + fetchLimit + 1;
-      } else {
-        total = fetchOffset + rows.length;
-      }
-    } else {
-      // AND returned few results — supplement with N-1 token AND queries
-      // This is much faster than OR-all which scans huge result sets
-      const tokens = textQuery.trim().split(/\s+/).filter(Boolean);
-      const andSeen = new Set(andRows.map((r) => r.lcsc as string));
-      const tier1Rows: Record<string, unknown>[] = [];
-      const needed = fetchLimit - andRows.length;
+    // ── Tier 0.5: N-1 token drop fallback (multi-token, few AND results) ──
+    const tier05Rows: Record<string, unknown>[] = [];
+    const tokens = textQuery.trim().split(/\s+/).filter(Boolean);
 
-      if (tokens.length >= 2 && needed > 0) {
-        // Drop one token at a time, longest first (most specific) — keeps
-        // shorter/common tokens that narrow results, better perf.
-        // Cap at 3 sub-queries to bound total work.
-        const sorted = [...tokens].sort((a, b) => b.length - a.length);
-        for (const drop of sorted.slice(0, 3)) {
-          if (tier1Rows.length >= needed) break;
-          const remaining = tokens.filter((t) => t !== drop);
-          const subQ = buildTsQuery(remaining.join(" "), parsed.phrases);
-          if (!subQ || subQ === andQ) continue;
-          // Tier-1 (demoted) results: order by stock instead of rank
-          // to avoid expensive ts_rank_cd on broad result sets
-          const subRows = await sql`
-            SELECT ${sql.unsafe(SELECT_COLS)},
-              0 AS rank
-            FROM parts p
-            WHERE p.search_vec @@ to_tsquery('simple', ${subQ})
-              AND NOT p.search_vec @@ to_tsquery('simple', ${andQ})
-            ${rangeFilter} ${colFilter} ${typeFilter} ${stockFilter} ${negFilter}
-            ORDER BY p.stock DESC
-            LIMIT ${needed - tier1Rows.length}
-          `;
-          for (const r of subRows) {
-            if (!andSeen.has(r.lcsc as string)) {
-              tier1Rows.push(r);
-              andSeen.add(r.lcsc as string);
-            }
+    if (isMultiToken && tier0Rows.length < TIER0_LIMIT && tokens.length >= 2) {
+      const seen = new Set(tier0Rows.map((r) => r.lcsc as string));
+      const needed = TIER0_LIMIT - tier0Rows.length;
+
+      // Drop one token at a time, longest first (most specific) — keeps
+      // shorter/common tokens that narrow results, better perf.
+      // Cap at 3 sub-queries to bound total work.
+      const sorted = [...tokens].sort((a, b) => b.length - a.length);
+      for (const drop of sorted.slice(0, 3)) {
+        if (tier05Rows.length >= needed) break;
+        const remaining = tokens.filter((t) => t !== drop);
+        const subQ = buildTsQuery(remaining.join(" "), parsed.phrases);
+        if (!subQ || subQ === andQ) continue;
+        const subRows = await sql`
+          SELECT ${sql.unsafe(SELECT_COLS)}
+          FROM parts p
+          WHERE p.search_vec @@ to_tsquery('simple', ${subQ})
+            AND NOT p.search_vec @@ to_tsquery('simple', ${andQ})
+          ${rangeFilter} ${colFilter} ${typeFilter} ${stockFilter} ${negFilter}
+          ORDER BY p.stock DESC
+          LIMIT ${needed - tier05Rows.length}
+        `;
+        for (const r of subRows) {
+          if (!seen.has(r.lcsc as string)) {
+            tier05Rows.push(r as Record<string, unknown>);
+            seen.add(r.lcsc as string);
+          }
+        }
+      }
+    }
+
+    // ── Tier 1: Substring ILIKE (trigram indexes on mpn, manufacturer, full_text) ──
+    // Build ILIKE patterns from text tokens and phrases
+    // Skip tokens < 3 chars — trigram index needs at least 3 chars for efficient lookup
+    const ilikeTokens: string[] = [];
+    for (const tok of tokens) {
+      const escaped = escapeIlike(tok.toLowerCase());
+      if (escaped && escaped.length >= 3) ilikeTokens.push(`%${escaped}%`);
+    }
+    for (const phrase of parsed.phrases) {
+      const escaped = escapeIlike(phrase.toLowerCase());
+      if (escaped) ilikeTokens.push(`%${escaped}%`);
+    }
+
+    const tier1aRows: Record<string, unknown>[] = []; // manufacturer matches (high value)
+    const tier1bRows: Record<string, unknown>[] = []; // full_text matches (broad)
+
+    if (ilikeTokens.length > 0) {
+      const excludeLcscs = [
+        ...tier0Rows.map((r) => r.lcsc as string),
+        ...tier05Rows.map((r) => r.lcsc as string),
+      ];
+      const excludeFilter = excludeLcscs.length > 0
+        ? sql`AND p.lcsc != ALL(${excludeLcscs})`
+        : sql``;
+
+      // Build negation fragment for ILIKE tier
+      let negFrag = sql``;
+      for (const neg of parsed.negations) {
+        const escaped = escapeIlike(neg.toLowerCase());
+        if (escaped) negFrag = sql`${negFrag} AND p.full_text NOT ILIKE ${`%${escaped}%`}`;
+      }
+
+      const seen = new Set(excludeLcscs);
+      const T1_MFR_LIMIT = 50; // Reserve slots for manufacturer matches
+
+      // Tier 1a: Manufacturer substring — most specific, catches "ada" → Padauk
+      {
+        let mfrWhere = sql`p.manufacturer ILIKE ${ilikeTokens[0]}`;
+        for (let i = 1; i < ilikeTokens.length; i++) {
+          mfrWhere = sql`${mfrWhere} AND p.manufacturer ILIKE ${ilikeTokens[i]}`;
+        }
+        const t1aRows = await sql`
+          SELECT ${sql.unsafe(SELECT_COLS)}
+          FROM parts p
+          WHERE ${mfrWhere}
+          ${excludeFilter} ${negFrag}
+          ${rangeFilter} ${colFilter} ${typeFilter} ${stockFilter}
+          LIMIT ${T1_MFR_LIMIT}
+        `;
+        for (const r of t1aRows) {
+          if (!seen.has(r.lcsc as string)) {
+            tier1aRows.push(r as Record<string, unknown>);
+            seen.add(r.lcsc as string);
           }
         }
       }
 
-      const andWithTier = andRows.map((r) => ({ ...r, tier: 0 }));
-      const orWithTier = tier1Rows.map((r) => ({ ...r, tier: 1 }));
-      rows = [...andWithTier, ...orWithTier];
-      total = rows.length;
+      // Tier 1b: MPN + full_text substring — broader, fills remaining slots
+      if (tier1aRows.length + tier1bRows.length < TIER1_LIMIT) {
+        const allExclude = [...seen];
+        const allExcludeFilter = allExclude.length > 0
+          ? sql`AND p.lcsc != ALL(${allExclude})`
+          : sql``;
+        let ftWhere = sql`p.full_text ILIKE ${ilikeTokens[0]}`;
+        for (let i = 1; i < ilikeTokens.length; i++) {
+          ftWhere = sql`${ftWhere} AND p.full_text ILIKE ${ilikeTokens[i]}`;
+        }
+        const remaining = TIER1_LIMIT - tier1aRows.length - tier1bRows.length;
+        const t1bRows = await sql`
+          SELECT ${sql.unsafe(SELECT_COLS)}
+          FROM parts p
+          WHERE ${ftWhere}
+          ${allExcludeFilter} ${negFrag}
+          ${rangeFilter} ${colFilter} ${typeFilter} ${stockFilter}
+          LIMIT ${remaining}
+        `;
+        for (const r of t1bRows) {
+          if (!seen.has(r.lcsc as string)) {
+            tier1bRows.push(r as Record<string, unknown>);
+            seen.add(r.lcsc as string);
+          }
+        }
+      }
     }
 
-    // Map to summaries
-    let results: (PartSummary & { score: number })[] = rows.map((r) => ({
-      ...(r as unknown as PartSummary),
-      score: Number((r as Record<string, unknown>).rank ?? 0)
-        + ((r as Record<string, unknown>).tier === 0 ? 1000 : 0),
-    }));
+    // ── Merge and score ──────────────────────────────────────────
+    let results: (PartSummary & { score: number })[] = [
+      ...tier0Rows.map((r) => ({
+        ...(r as unknown as PartSummary),
+        score: 2000,
+      })),
+      ...tier05Rows.map((r) => ({
+        ...(r as unknown as PartSummary),
+        score: 1500,
+      })),
+      ...tier1aRows.map((r) => ({
+        ...(r as unknown as PartSummary),
+        score: 700, // manufacturer match — higher than broad substring
+      })),
+      ...tier1bRows.map((r) => ({
+        ...(r as unknown as PartSummary),
+        score: 400, // broad full_text substring
+      })),
+    ];
+
+    const totalCount = results.length;
 
     if (isRelevanceSort) {
       results = applyBoost(results, textQuery).slice(offset, offset + limit);
     } else if (isPriceSort) {
       results = applySortToResults(results, params.sort).slice(offset, offset + limit);
     } else {
-      // Trim the +1 we added for hasMore detection
-      const hasMore = results.length > limit;
-      if (hasMore) total = Math.max(total, offset + limit + 1);
-      results = results.slice(0, limit);
-    }
-
-    // Path 3: Fuzzy fallback with trigram similarity
-    if (params.fuzzy && results.length < 5 && !params.matchAll) {
-      const tokens = textQuery.split(/\s+/).filter(Boolean);
-      if (tokens.length > 0) {
-        const pattern = `%${tokens.join("%")}%`;
-        const seen = new Set(results.map((r) => r.lcsc));
-
-        // First: mpn ILIKE (uses idx_parts_mpn_trgm, fast ~1ms)
-        const fuzzyMpnRows = await sql`
-          SELECT ${sql.unsafe(SELECT_COLS)}
-          FROM parts p
-          WHERE p.mpn ILIKE ${pattern}
-          ${rangeFilter} ${colFilter} ${typeFilter} ${stockFilter} ${negFilter}
-          LIMIT ${limit}
-        `;
-        for (const r of fuzzyMpnRows) {
-          if (!seen.has(r.lcsc as string)) {
-            results.push({ ...(r as unknown as PartSummary), score: 0 });
-            seen.add(r.lcsc as string);
-          }
-        }
-
-        // Only if still need more: description ILIKE (slower, no trgm index)
-        if (results.length < 5) {
-          const excludeLcscs = [...seen];
-          const fuzzyDescRows = await sql`
-            SELECT ${sql.unsafe(SELECT_COLS)}
-            FROM parts p
-            WHERE p.description ILIKE ${pattern}
-              AND p.lcsc != ALL(${excludeLcscs})
-            ${rangeFilter} ${colFilter} ${typeFilter} ${stockFilter} ${negFilter}
-            LIMIT ${limit}
-          `;
-          for (const r of fuzzyDescRows) {
-            if (!seen.has(r.lcsc as string)) {
-              results.push({ ...(r as unknown as PartSummary), score: 0 });
-              seen.add(r.lcsc as string);
-            }
-          }
-        }
-
-        total = Math.max(total, results.length);
+      // stock_desc / stock_asc
+      if (params.sort === "stock_asc") {
+        results = [...results].sort((a, b) => a.stock - b.stock);
       }
+      // stock_desc: already ordered within each tier by stock DESC,
+      // but we need to re-sort across tiers
+      else {
+        results = [...results].sort((a, b) => b.stock - a.stock);
+      }
+      results = results.slice(offset, offset + limit);
     }
 
-    return { results: results.slice(0, limit), total };
+    return { results: results.slice(0, limit), total: totalCount };
   } catch (err) {
     console.error("Search error:", err);
     return { results: [], total: 0 };

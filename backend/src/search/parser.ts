@@ -12,14 +12,12 @@ function sanitize(tok: string): string {
 
 /**
  * Should this token use prefix matching (:*)?
- * Yes for part-number-like tokens (contain digits, dots, or hyphens).
- * No for plain alpha words — exact match avoids scanning 100k+ rows.
- * Short pure-alpha tokens like "smd" (730k), "led" (85k) are too broad for prefix.
+ * Always yes — users expect partial words to match (e.g. "pada" → "padauk").
+ * The GIN index handles prefix scans efficiently, and common words like "led"
+ * already match ~80k rows with exact match so prefix adds marginal cost.
  */
-function needsPrefix(tok: string): boolean {
-  if (/[\d.\-]/.test(tok)) return true;
-  if (tok.length <= 2) return true;
-  return false;
+function needsPrefix(_tok: string): boolean {
+  return true;
 }
 
 /**
@@ -27,8 +25,7 @@ function needsPrefix(tok: string): boolean {
  * The 'simple' dictionary preserves dots and hyphens in tokens
  * (e.g. "1.25" stays as one token, "RC0402JR-07100KL" becomes both
  * the full form and sub-tokens).
- * Only part-number-like tokens get :* prefix to avoid expensive
- * prefix scans on common English words.
+ * All tokens get :* prefix for substring-style matching.
  */
 function tokenToTsExpr(tok: string): string {
   const clean = sanitize(tok);
