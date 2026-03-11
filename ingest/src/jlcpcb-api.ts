@@ -91,6 +91,7 @@ interface JlcPart {
   urlSuffix?: string;
   componentLibraryType: string;
   encapsulationNumber?: number;
+  minPurchaseNum?: number;
   attributes?: Record<string, unknown>;
 }
 
@@ -316,7 +317,8 @@ function convertPart(p: JlcPart): PartRow {
     description: p.describe || "",
     datasheet: p.dataManualOfficialLink || p.dataManualUrl || null,
     package: translateChinese(p.componentSpecificationEn || "") || null,
-    joints: p.encapsulationNumber ?? null,
+    joints: null,
+    moq: p.minPurchaseNum ?? null,
     stock: p.stockCount || 0,
     price_raw: formatPrices(p.componentPrices || []),
     img: p.minImage || p.componentImageUrl || null,
@@ -326,6 +328,60 @@ function convertPart(p: JlcPart): PartRow {
     attributes: attrsJson,
     search_text: buildSearchText(attrsJson),
   };
+}
+
+// ── LCSC product detail enrichment ──
+
+const LCSC_API = "https://wmsc.lcsc.com/ftps/wm/product/detail";
+const LCSC_CONCURRENCY = 5;
+const LCSC_DELAY_MS = 100;
+
+async function enrichFromLcsc(parts: PartRow[]): Promise<void> {
+  // Process in groups of LCSC_CONCURRENCY
+  for (let i = 0; i < parts.length; i += LCSC_CONCURRENCY) {
+    const group = parts.slice(i, i + LCSC_CONCURRENCY);
+    const results = await Promise.allSettled(
+      group.map(async (part) => {
+        try {
+          const resp = await fetch(`${LCSC_API}?productCode=${part.lcsc}`, {
+            headers: { "User-Agent": "Mozilla/5.0" },
+            signal: AbortSignal.timeout(8000),
+          });
+          if (!resp.ok) return;
+          const data = await resp.json();
+          const r = data?.result;
+          if (!r) return;
+
+          // MOQ
+          if (r.minBuyNumber != null && r.minBuyNumber > 0) {
+            part.moq = r.minBuyNumber;
+          }
+
+          // Price tiers from LCSC (more accurate, tier starts match real MOQ)
+          if (Array.isArray(r.productPriceList) && r.productPriceList.length > 0) {
+            const tiers = r.productPriceList
+              .sort((a: any, b: any) => a.ladder - b.ladder)
+              .map((t: any, idx: number, arr: any[]) => {
+                const end = idx < arr.length - 1 ? arr[idx + 1].ladder - 1 : "";
+                return `${t.ladder}-${end}:${t.usdPrice}`;
+              })
+              .join(",");
+            if (tiers) part.price_raw = tiers;
+          }
+
+          // Stock (use LCSC stock if available)
+          if (r.stockNumber != null) {
+            part.stock = r.stockNumber;
+          }
+        } catch {
+          // Silently skip — JLCPCB data is the fallback
+        }
+      })
+    );
+    if (i + LCSC_CONCURRENCY < parts.length) {
+      await Bun.sleep(LCSC_DELAY_MS);
+    }
+  }
 }
 
 // ── Progress tracking ──
@@ -465,6 +521,7 @@ async function main() {
 
     const flushBatch = async () => {
       if (batch.length === 0) return;
+      await enrichFromLcsc(batch);
       const stats = await bulkInsertParts(sql, batch);
       progress.totalNew += stats.inserted;
       batch = [];

@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { join } from "path";
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "fs";
+import { getSql } from "../db.ts";
 
 export const fpRouter = new Hono();
 
@@ -153,7 +154,7 @@ function arrayMax(arr: number[]): number {
   return max;
 }
 
-function renderFootprintSvg(data: Record<string, unknown>, pkgName?: string): string | null {
+function renderFootprintSvg(data: Record<string, unknown>, pkgName?: string): { svg: string; padCount: number } | null {
   const shapes = (data.shape as string[]) ?? [];
   const head = data.head as Record<string, unknown> | undefined;
   const pkgTitle = pkgName || (head?.c_para as Record<string, string>)?.package || "";
@@ -480,7 +481,8 @@ function renderFootprintSvg(data: Record<string, unknown>, pkgName?: string): st
 
   const refGroup = `<g opacity="0.25" transform="translate(${refX},${refY})">${refEls.join("")}</g>`;
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vx} ${vy} ${vw} ${vh}"><rect x="${vx}" y="${vy}" width="${vw}" height="${vh}" fill="white"/>${refGroup}${elements.join("")}${labels.join("")}${scaleEls.join("")}</svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vx} ${vy} ${vw} ${vh}"><rect x="${vx}" y="${vy}" width="${vw}" height="${vh}" fill="white"/>${refGroup}${elements.join("")}${labels.join("")}${scaleEls.join("")}</svg>`;
+  return { svg, padCount: padLabels.length };
 }
 
 /** Fetch footprint from EasyEDA in the background and cache it to disk. */
@@ -505,11 +507,16 @@ async function fetchFootprint(lcsc: string, pkgName?: string): Promise<void> {
       const pkgDataStr = (result?.packageDetail as Record<string, unknown>)?.dataStr;
       if (pkgDataStr) {
         const data = typeof pkgDataStr === "string" ? JSON.parse(pkgDataStr) : pkgDataStr;
-        const svg = renderFootprintSvg(data as Record<string, unknown>, pkgName);
-        if (svg) {
+        const result2 = renderFootprintSvg(data as Record<string, unknown>, pkgName);
+        if (result2) {
           mkdirSync(IMG_DIR, { recursive: true });
-          writeFileSync(svgCachePath(lcsc), svg);
+          writeFileSync(svgCachePath(lcsc), result2.svg);
           succeeded = true;
+          // Opportunistically backfill pad count into joints column
+          if (result2.padCount > 0) {
+            const sql = getSql();
+            sql`UPDATE parts SET joints = ${result2.padCount} WHERE lcsc = ${lcsc} AND joints IS NULL`.catch(() => {});
+          }
         }
       }
     }

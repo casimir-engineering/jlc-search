@@ -15,6 +15,7 @@ export async function applySchema(sql: Sql): Promise<void> {
       datasheet    TEXT,
       package      TEXT,
       joints       INTEGER,
+      moq          INTEGER,
       stock        INTEGER NOT NULL DEFAULT 0,
       price_raw    TEXT NOT NULL DEFAULT '',
       img          TEXT,

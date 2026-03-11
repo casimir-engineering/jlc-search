@@ -102,6 +102,7 @@ export function useSearch() {
     filters,
     setFilters,
     results,
+    setResults,
     total,
     loading,
     error,

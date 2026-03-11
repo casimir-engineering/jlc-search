@@ -1,5 +1,6 @@
 import type { PartSummary } from "../types.ts";
 import { PartCard } from "./PartCard.tsx";
+import { CartSummary } from "./CartSummary.tsx";
 
 interface Props {
   results: PartSummary[];
@@ -12,10 +13,15 @@ interface Props {
   totalPages: number;
   pageSize: number;
   onPageChange: (page: number) => void;
-  showApiData: boolean;
   favorites: Set<string>;
   onToggleFavorite: (lcsc: string) => void;
   favoritesOnly: boolean;
+  quantities: Record<string, number>;
+  onQuantityChange: (lcsc: string, qty: number) => void;
+  cartMode: boolean;
+  bomParts: PartSummary[];
+  hasFavorites: boolean;
+  onClearAll: () => void;
 }
 
 function Pagination({ page, totalPages, onPageChange }: { page: number; totalPages: number; onPageChange: (p: number) => void }) {
@@ -64,7 +70,7 @@ function Pagination({ page, totalPages, onPageChange }: { page: number; totalPag
   );
 }
 
-export function ResultsList({ results, total, loading, error, query, tookMs, page, totalPages, pageSize, onPageChange, showApiData, favorites, onToggleFavorite, favoritesOnly }: Props) {
+export function ResultsList({ results, total, loading, error, query, tookMs, page, totalPages, pageSize, onPageChange, favorites, onToggleFavorite, favoritesOnly, quantities, onQuantityChange, cartMode, bomParts, hasFavorites, onClearAll }: Props) {
   if (error) {
     return (
       <div className="results-message error">
@@ -137,10 +143,11 @@ export function ResultsList({ results, total, loading, error, query, tookMs, pag
           <span>{total} favorite{total !== 1 ? "s" : ""}</span>
         )}
       </div>
+      {hasFavorites && <CartSummary parts={bomParts} quantities={quantities} onClearAll={onClearAll} />}
       <Pagination page={page} totalPages={totalPages} onPageChange={onPageChange} />
       <div className="results-list">
         {results.map((part) => (
-          <PartCard key={part.lcsc} part={part} showApiData={showApiData} isFavorite={favorites.has(part.lcsc)} onToggleFavorite={onToggleFavorite} />
+          <PartCard key={part.lcsc} part={part} isFavorite={favorites.has(part.lcsc)} onToggleFavorite={onToggleFavorite} quantity={quantities[part.lcsc]} onQuantityChange={onQuantityChange} />
         ))}
       </div>
       <Pagination page={page} totalPages={totalPages} onPageChange={onPageChange} />

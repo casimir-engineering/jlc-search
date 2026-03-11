@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { getSql } from "../db.ts";
+import { refreshFromLcsc } from "../lcsc.ts";
 
 export const partRouter = new Hono();
 
@@ -12,10 +13,11 @@ partRouter.get("/batch", async (c) => {
   const rows = await sql`
     SELECT lcsc, mpn, manufacturer, category, subcategory, description,
            datasheet, package, joints, stock, price_raw, img, url,
-           part_type, pcba_type
+           part_type, pcba_type, moq
     FROM parts WHERE lcsc IN ${sql(ids)}
   `;
 
+  for (const row of rows) refreshFromLcsc((row as any).lcsc);
   return c.json({ results: rows });
 });
 
@@ -26,7 +28,7 @@ partRouter.get("/:lcsc", async (c) => {
   const rows = await sql`
     SELECT lcsc, mpn, manufacturer, category, subcategory, description,
            datasheet, package, joints, stock, price_raw, img, url,
-           part_type, pcba_type, attributes
+           part_type, pcba_type, moq, attributes
     FROM parts WHERE lcsc = ${lcsc}
   `;
 
@@ -34,5 +36,6 @@ partRouter.get("/:lcsc", async (c) => {
     return c.json({ error: "Part not found" }, 404);
   }
 
+  refreshFromLcsc(lcsc);
   return c.json(rows[0]);
 });

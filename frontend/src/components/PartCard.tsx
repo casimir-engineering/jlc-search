@@ -2,12 +2,14 @@ import { useState, memo } from "react";
 import { createPortal } from "react-dom";
 import type { PartSummary } from "../types.ts";
 import { PriceTable } from "./PriceTable.tsx";
+import { getMoq, getUnitPrice, getLineTotal, roundToMoqMultiple } from "../utils/price.ts";
 
 interface Props {
   part: PartSummary;
-  showApiData: boolean;
   isFavorite: boolean;
   onToggleFavorite: (lcsc: string) => void;
+  quantity?: number;
+  onQuantityChange?: (lcsc: string, qty: number) => void;
 }
 
 const PART_TYPE_CLASS: Record<string, string> = {
@@ -31,28 +33,10 @@ function translatePackage(pkg: string): string {
   return pkg;
 }
 
-function highlightJson(obj: unknown): string {
-  const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  return JSON.stringify(obj, null, 2).replace(
-    /("(?:\\.|[^"\\])*")\s*(:)?|(\b(?:true|false|null)\b)|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g,
-    (match, str?: string, colon?: string, bool?: string, num?: string) => {
-      if (str) {
-        const escaped = esc(str);
-        return colon
-          ? `<span class="json-key">${escaped}</span>:`
-          : `<span class="json-str">${escaped}</span>`;
-      }
-      if (bool) return `<span class="json-bool">${esc(bool)}</span>`;
-      if (num) return `<span class="json-num">${esc(num)}</span>`;
-      return esc(match);
-    }
-  );
-}
-
 const POPUP_SIZE = 390;
 const POPUP_GAP = 12;
 
-export const PartCard = memo(function PartCard({ part, showApiData, isFavorite, onToggleFavorite }: Props) {
+export const PartCard = memo(function PartCard({ part, isFavorite, onToggleFavorite, quantity, onQuantityChange }: Props) {
   const [photoSrc] = useState(part.lcsc ? `/api/img/${part.lcsc}` : null);
   const [photoFailed, setPhotoFailed] = useState(false);
   const [schFailed, setSchFailed] = useState(false);
@@ -120,14 +104,43 @@ export const PartCard = memo(function PartCard({ part, showApiData, isFavorite, 
 
   return (
     <div className={`part-card${isFavorite ? " part-card-favorite" : ""}`}>
-      <button
-        className={`fav-star${isFavorite ? " fav-star-active" : ""}`}
-        onClick={() => onToggleFavorite(part.lcsc)}
-        title={isFavorite ? "Remove from favorites" : "Add to favorites"}
-        aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
-      >
-        {isFavorite ? "\u2605" : "\u2606"}
-      </button>
+      <div className="card-top-right">
+        <button
+          className={`fav-star${isFavorite ? " fav-star-active" : ""}`}
+          onClick={() => onToggleFavorite(part.lcsc)}
+          title={isFavorite ? "Remove from favorites" : "Add to favorites"}
+          aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
+        >
+          {isFavorite ? "\u2605" : "\u2606"}
+        </button>
+        {isFavorite && onQuantityChange && (
+          <div className="cart-qty-section">
+            <input
+              type="number"
+              className="cart-qty-input"
+              value={quantity ?? ""}
+              min={1}
+              onChange={(e) => {
+                const val = parseInt(e.target.value, 10);
+                if (!isNaN(val) && val > 0) onQuantityChange(part.lcsc, val);
+              }}
+              onBlur={() => {
+                if (quantity != null && quantity > 0) {
+                  const moq = getMoq(part.price_raw, part.moq);
+                  const rounded = roundToMoqMultiple(quantity, moq);
+                  if (rounded !== quantity) onQuantityChange(part.lcsc, rounded);
+                }
+              }}
+            />
+            {quantity != null && quantity > 0 && (
+              <div className="cart-line-total">
+                <span className="cart-unit-price">${getUnitPrice(part.price_raw, quantity).toFixed(4)}/ea</span>
+                <span className="cart-total-price">${getLineTotal(part.price_raw, quantity).toFixed(2)}</span>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
       <div className="part-card-images">
         {photoSrc && !photoFailed && (
           <div
@@ -259,10 +272,6 @@ export const PartCard = memo(function PartCard({ part, showApiData, isFavorite, 
           </a>
         </div>
       </div>
-
-      {showApiData && (
-        <pre className="part-api-data" dangerouslySetInnerHTML={{ __html: highlightJson(part) }} />
-      )}
 
       {popupPos && createPortal(
         <div
