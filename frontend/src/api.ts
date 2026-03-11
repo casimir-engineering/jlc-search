@@ -4,7 +4,7 @@ const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 
 export async function searchParts(
   q: string,
-  filters: { partTypes: string[]; inStock: boolean; fuzzy: boolean; sort: SortOption; matchAll: boolean },
+  filters: { partTypes: string[]; inStock: boolean; economicOnly: boolean; fuzzy: boolean; sort: SortOption; matchAll: boolean },
   options?: { signal?: AbortSignal; limit?: number; offset?: number }
 ): Promise<SearchResponse> {
   const params = new URLSearchParams({ q });
