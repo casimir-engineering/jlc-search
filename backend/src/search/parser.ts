@@ -126,7 +126,7 @@ function resolveUnit(raw: string): string | null {
 
 export interface RangeFilter {
   unit: string;
-  op: "gt" | "gte" | "lt" | "lte" | "eq" | "between";
+  op: "gte" | "lte" | "eq" | "between";
   value: number;
   min: number;
   max: number;
@@ -164,7 +164,7 @@ function parseFilterToken(token: string): RangeFilter | null {
     const value = parseSIValue(cmpMatch[2]);
     if (value !== null) {
       const opMap: Record<string, RangeFilter["op"]> = {
-        ">": "gt", ">=": "gte", "<": "lt", "<=": "lte", "=": "eq",
+        ">": "gte", ">=": "gte", "<": "lte", "<=": "lte", "=": "eq",
       };
       return { unit, op: opMap[cmpMatch[1]], value, min: 0, max: 0 };
     }

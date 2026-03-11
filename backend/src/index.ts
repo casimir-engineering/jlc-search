@@ -11,7 +11,44 @@ import { waitForDb, closeDb } from "./db.ts";
 
 const app = new Hono();
 
-app.use("*", cors({ origin: "*" }));
+// --- CORS: configurable via ALLOWED_ORIGINS, default to localhost:3000 ---
+const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? "http://localhost:3000").split(",").map(s => s.trim());
+app.use("*", cors({
+  origin: (origin) => allowedOrigins.includes("*") ? origin : (allowedOrigins.includes(origin) ? origin : allowedOrigins[0]),
+}));
+
+// --- Security headers ---
+app.use("*", async (c, next) => {
+  await next();
+  c.header("X-Content-Type-Options", "nosniff");
+  c.header("X-Frame-Options", "DENY");
+  c.header("Referrer-Policy", "strict-origin-when-cross-origin");
+  c.header("Content-Security-Policy", "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'");
+});
+
+// --- Simple IP rate limiter: 200 req/min per IP ---
+const rateMap = new Map<string, { count: number; reset: number }>();
+const RATE_LIMIT = parseInt(process.env.RATE_LIMIT ?? "200");
+const RATE_WINDOW_MS = 60_000;
+app.use("*", async (c, next) => {
+  const ip = c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ?? c.req.header("x-real-ip") ?? "unknown";
+  const now = Date.now();
+  let entry = rateMap.get(ip);
+  if (!entry || now > entry.reset) {
+    entry = { count: 0, reset: now + RATE_WINDOW_MS };
+    rateMap.set(ip, entry);
+  }
+  entry.count++;
+  if (entry.count > RATE_LIMIT) {
+    c.header("Retry-After", "60");
+    return c.json({ error: "Rate limit exceeded" }, 429);
+  }
+  // Periodic cleanup: every ~1000 requests, purge expired entries
+  if (entry.count === 1 && rateMap.size > 10_000) {
+    for (const [k, v] of rateMap) { if (now > v.reset) rateMap.delete(k); }
+  }
+  await next();
+});
 
 app.route("/api/search", searchRouter);
 app.route("/api/parts", partRouter);
@@ -32,6 +69,7 @@ const server = Bun.serve({
   port,
   hostname: "0.0.0.0",
   fetch: app.fetch,
+  maxRequestBodySize: 64 * 1024,  // 64 KB — this is a search API, no large uploads
 });
 
 console.log(`Backend running on http://0.0.0.0:${server.port}`);

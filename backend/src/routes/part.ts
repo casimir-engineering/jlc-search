@@ -6,7 +6,7 @@ export const partRouter = new Hono();
 
 partRouter.get("/batch", async (c) => {
   const idsParam = c.req.query("ids") ?? "";
-  const ids = idsParam.split(",").map((s) => s.trim().toUpperCase()).filter((s) => /^C\d+$/.test(s));
+  const ids = idsParam.split(",").slice(0, 200).map((s) => s.trim().toUpperCase()).filter((s) => /^C\d+$/.test(s));
   if (ids.length === 0) return c.json({ results: [] });
 
   const sql = getSql();
@@ -23,6 +23,7 @@ partRouter.get("/batch", async (c) => {
 
 partRouter.get("/:lcsc", async (c) => {
   const lcsc = c.req.param("lcsc").toUpperCase();
+  if (!/^C\d+$/.test(lcsc)) return c.json({ error: "Invalid LCSC code" }, 400);
   const sql = getSql();
 
   const rows = await sql`

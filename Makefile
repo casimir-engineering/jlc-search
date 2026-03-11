@@ -2,17 +2,18 @@
 
 # Start PostgreSQL for local development
 pg:
+	@test -f .env || { echo "ERROR: .env not found. Copy .env.example to .env and set POSTGRES_PASSWORD + DATABASE_URL"; exit 1; }
 	docker compose up db -d
 	@echo "PostgreSQL running on localhost:5432"
 
 # Development: run backend and frontend locally (needs pg running)
 dev: pg
 	@echo "Starting backend and frontend in dev mode..."
-	@cd backend && bun install && bun run dev &
+	@set -a && . ./.env && set +a && cd backend && bun install && bun run dev &
 	@cd frontend && npm install && npm run dev
 
 dev-backend: pg
-	cd backend && bun run src/index.ts
+	set -a && . ./.env && set +a && cd backend && bun run src/index.ts
 
 dev-frontend:
 	cd frontend && npm run dev

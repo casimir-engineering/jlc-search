@@ -76,9 +76,7 @@ function applySortToResults(
 
 function buildRangeExistsFragment(sql: ReturnType<typeof getSql>, f: RangeFilter) {
   switch (f.op) {
-    case "gt":      return sql`EXISTS (SELECT 1 FROM part_nums pn WHERE pn.lcsc = p.lcsc AND pn.unit = ${f.unit} AND pn.value > ${f.value})`;
     case "gte":     return sql`EXISTS (SELECT 1 FROM part_nums pn WHERE pn.lcsc = p.lcsc AND pn.unit = ${f.unit} AND pn.value >= ${f.value})`;
-    case "lt":      return sql`EXISTS (SELECT 1 FROM part_nums pn WHERE pn.lcsc = p.lcsc AND pn.unit = ${f.unit} AND pn.value < ${f.value})`;
     case "lte":     return sql`EXISTS (SELECT 1 FROM part_nums pn WHERE pn.lcsc = p.lcsc AND pn.unit = ${f.unit} AND pn.value <= ${f.value})`;
     case "eq":      return sql`EXISTS (SELECT 1 FROM part_nums pn WHERE pn.lcsc = p.lcsc AND pn.unit = ${f.unit} AND pn.value = ${f.value})`;
     case "between": return sql`EXISTS (SELECT 1 FROM part_nums pn WHERE pn.lcsc = p.lcsc AND pn.unit = ${f.unit} AND pn.value BETWEEN ${f.min} AND ${f.max})`;
@@ -91,9 +89,7 @@ function buildColumnFilter(sql: ReturnType<typeof getSql>, filterGroups: RangeFi
   if (pads.length === 0) return sql``;
   const parts = pads.map((f) => {
     switch (f.op) {
-      case "gt":      return sql`p.joints > ${f.value}`;
       case "gte":     return sql`p.joints >= ${f.value}`;
-      case "lt":      return sql`p.joints < ${f.value}`;
       case "lte":     return sql`p.joints <= ${f.value}`;
       case "eq":      return sql`p.joints = ${f.value}`;
       case "between": return sql`p.joints BETWEEN ${f.min} AND ${f.max}`;

@@ -12,8 +12,10 @@ COPY backend/src/ ./backend/src/
 COPY ingest/tsconfig.json ./ingest/
 COPY ingest/src/ ./ingest/src/
 
-ENV DATABASE_URL=postgres://jlc:jlc@localhost:5432/jlc
 ENV JLCPARTS_BASE=https://yaqwsx.github.io/jlcparts
 ENV INGEST_CONCURRENCY=4
+
+RUN addgroup --gid 1000 app && adduser --disabled-password --uid 1000 --ingroup app app
+USER app
 
 CMD ["bun", "run", "ingest/src/ingest.ts"]

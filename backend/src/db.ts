@@ -1,7 +1,11 @@
 import postgres from "postgres";
 import { applySchema } from "./schema.ts";
 
-const DATABASE_URL = process.env.DATABASE_URL ?? "postgres://jlc:jlc@localhost:5432/jlc";
+const DATABASE_URL = process.env.DATABASE_URL;
+if (!DATABASE_URL) {
+  console.error("FATAL: DATABASE_URL environment variable is required");
+  process.exit(1);
+}
 
 let _sql: ReturnType<typeof postgres> | null = null;
 let _ready: Promise<void> | null = null;
@@ -13,6 +17,7 @@ export function getSql(): ReturnType<typeof postgres> {
     idle_timeout: 20,
     connect_timeout: 10,
     onnotice: () => {},  // suppress NOTICE logs
+    connection: { statement_timeout: 10_000 },  // kill queries after 10s
   });
   _ready = applySchema(_sql);
   return _sql;

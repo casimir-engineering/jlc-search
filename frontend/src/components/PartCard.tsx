@@ -244,7 +244,7 @@ export const PartCard = memo(function PartCard({ part, isFavorite, onToggleFavor
         <PriceTable priceRaw={part.price_raw} />
 
         <div className="part-actions">
-          {part.datasheet && (
+          {part.datasheet && /^https?:\/\//i.test(part.datasheet) && (
             <a
               href={part.datasheet}
               target="_blank"

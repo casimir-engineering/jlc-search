@@ -58,7 +58,7 @@ const inflight = new Map<string, Promise<PcbaInfo | null>>();
 
 pcbaRouter.get("/:lcsc", async (c) => {
   const lcsc = c.req.param("lcsc").toUpperCase().replace(/[^A-Z0-9]/g, "");
-  if (!lcsc) return c.json({ error: "missing lcsc" }, 400);
+  if (!/^C\d+$/.test(lcsc)) return c.json({ error: "Invalid LCSC code" }, 400);
 
   const cached = getCached(lcsc);
   if (cached) {

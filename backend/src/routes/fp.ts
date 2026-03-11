@@ -5,6 +5,11 @@ import { getSql } from "../db.ts";
 
 export const fpRouter = new Hono();
 
+/** Escape XML special characters for safe SVG text content */
+function esc(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
 const IMG_DIR = process.env.IMG_CACHE_DIR
   ?? join(import.meta.dir, "../../../data/img");
 
@@ -357,7 +362,7 @@ function renderFootprintSvg(data: Record<string, unknown>, pkgName?: string): { 
     const fitByH = h * 0.63;
     const fontSize = Math.max(Math.min(fitByW, fitByH), minFontSize);
     labels.push(
-      `<text x="${cx}" y="${cy}" font-size="${fontSize.toFixed(2)}" fill="rgba(0,0,255,0.7)" text-anchor="middle" dominant-baseline="central" font-family="sans-serif" font-weight="bold">${pin}</text>`
+      `<text x="${cx}" y="${cy}" font-size="${fontSize.toFixed(2)}" fill="rgba(0,0,255,0.7)" text-anchor="middle" dominant-baseline="central" font-family="sans-serif" font-weight="bold">${esc(pin)}</text>`
     );
   }
 
@@ -437,7 +442,7 @@ function renderFootprintSvg(data: Record<string, unknown>, pkgName?: string): { 
 
   // Package title with margin below
   if (pkgTitle) {
-    scaleEls.push(`<text x="${scaleCX}" y="${pkgLabelY}" font-size="${scaleFontSize * 2}" fill="#999" text-anchor="middle" font-family="sans-serif">${pkgTitle}</text>`);
+    scaleEls.push(`<text x="${scaleCX}" y="${pkgLabelY}" font-size="${scaleFontSize * 2}" fill="#999" text-anchor="middle" font-family="sans-serif">${esc(pkgTitle)}</text>`);
   }
 
   // --- SOT-23-6 reference (popup only, ≥200px viewport) ---

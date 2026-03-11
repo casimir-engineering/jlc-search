@@ -6,12 +6,12 @@ import type { SearchResponse } from "../types.ts";
 export const searchRouter = new Hono();
 
 searchRouter.get("/", async (c) => {
-  const q = c.req.query("q") ?? "";
-  const partType = c.req.queries("partType") ?? [];
+  const q = (c.req.query("q") ?? "").slice(0, 500);
+  const partType = (c.req.queries("partType") ?? []).slice(0, 10);
   const inStock = c.req.query("inStock") === "true";
   const fuzzy = c.req.query("fuzzy") === "true";
-  const limit = Math.min(parseInt(c.req.query("limit") ?? "50"), 200);
-  const offset = parseInt(c.req.query("offset") ?? "0");
+  const limit = Math.min(Math.max(1, parseInt(c.req.query("limit") ?? "50") || 50), 200);
+  const offset = Math.min(Math.max(0, parseInt(c.req.query("offset") ?? "0") || 0), 100_000);
   const sortRaw = c.req.query("sort") ?? "relevance";
   const sort = ["relevance", "price_asc", "price_desc", "stock_desc", "stock_asc"].includes(sortRaw)
     ? sortRaw as "relevance" | "price_asc" | "price_desc" | "stock_desc" | "stock_asc"

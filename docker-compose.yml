@@ -3,9 +3,9 @@ services:
     image: postgres:17-alpine
     network_mode: host
     environment:
-      POSTGRES_DB: jlc
-      POSTGRES_USER: jlc
-      POSTGRES_PASSWORD: jlc
+      POSTGRES_DB: ${POSTGRES_DB:-jlc}
+      POSTGRES_USER: ${POSTGRES_USER:-jlc}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     volumes:
       - pg_data:/var/lib/postgresql/data
     command: >
@@ -30,8 +30,9 @@ services:
     volumes:
       - img_cache:/app/data/img
     environment:
-      DATABASE_URL: postgres://jlc:jlc@localhost:5432/jlc
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env}
       PORT: "3001"
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000}
     depends_on:
       db:
         condition: service_healthy
@@ -54,7 +55,7 @@ services:
     volumes:
       - img_cache:/app/data/img
     environment:
-      DATABASE_URL: postgres://jlc:jlc@localhost:5432/jlc
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env}
       JLCPARTS_BASE: https://yaqwsx.github.io/jlcparts
       INGEST_CONCURRENCY: "4"
     depends_on:

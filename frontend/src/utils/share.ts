@@ -10,11 +10,11 @@ export function decodeCartFromHash(hash: string): Record<string, number> | null 
   if (!hash.startsWith("#cart=")) return null;
   const data = hash.slice(6);
   if (!data) return null;
-  const quantities: Record<string, number> = {};
-  for (const entry of data.split(",")) {
+  const quantities: Record<string, number> = Object.create(null);
+  for (const entry of data.split(",").slice(0, 500)) {
     const [lcsc, qtyStr] = entry.split(":");
     const qty = parseInt(qtyStr ?? "0", 10);
-    if (lcsc && qty > 0) {
+    if (lcsc && /^C\d+$/i.test(lcsc) && qty > 0 && qty <= 100_000) {
       quantities[lcsc] = qty;
     }
   }
