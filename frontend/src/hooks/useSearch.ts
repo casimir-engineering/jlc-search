@@ -33,6 +33,7 @@ export function useSearch() {
   const [filters, setFiltersState] = useState<Filters>({
     partTypes: [],
     inStock: false,
+    economicOnly: false,
     fuzzy: false,
     sort: "relevance",
     matchAll: false,

@@ -76,10 +76,17 @@ pcbaRouter.get("/:lcsc", async (c) => {
 
   if (result) {
     writeFileSync(cachePath(lcsc), JSON.stringify(result));
-    if (result.description) {
+    if (result.pcba_type !== "unknown" || result.description) {
       try {
         const sql = getSql();
-        await sql`UPDATE parts SET description = ${result.description} WHERE lcsc = ${lcsc}`;
+        const normalizedPcba = result.pcba_type.replace(" and ", "+");
+        if (result.pcba_type !== "unknown" && result.description) {
+          await sql`UPDATE parts SET pcba_type = ${normalizedPcba}, description = ${result.description} WHERE lcsc = ${lcsc}`;
+        } else if (result.pcba_type !== "unknown") {
+          await sql`UPDATE parts SET pcba_type = ${normalizedPcba} WHERE lcsc = ${lcsc}`;
+        } else {
+          await sql`UPDATE parts SET description = ${result.description} WHERE lcsc = ${lcsc}`;
+        }
       } catch {}
     }
     return c.json({ lcsc, ...result });

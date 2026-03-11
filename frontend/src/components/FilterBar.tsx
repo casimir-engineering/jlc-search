@@ -11,14 +11,13 @@ const SORT_OPTIONS: { value: SortOption; label: string }[] = [
 interface Props {
   filters: Filters;
   onChange: (update: Partial<Filters>) => void;
-  favoritesCount: number;
   cartMode: boolean;
   onCartModeChange: (v: boolean) => void;
   cartItemCount: number;
   cartTotal: number;
 }
 
-export function FilterBar({ filters, onChange, favoritesCount, cartMode, onCartModeChange, cartItemCount, cartTotal }: Props) {
+export function FilterBar({ filters, onChange, cartMode, onCartModeChange, cartItemCount, cartTotal }: Props) {
   const basicActive = filters.partTypes.includes("Basic");
 
   return (
@@ -28,6 +27,12 @@ export function FilterBar({ filters, onChange, favoritesCount, cartMode, onCartM
         onClick={() => onChange({ partTypes: basicActive ? [] : ["Basic"] })}
       >
         Basic only
+      </button>
+      <button
+        className={`chip ${filters.economicOnly ? "chip-active" : ""}`}
+        onClick={() => onChange({ economicOnly: !filters.economicOnly })}
+      >
+        Economic asy only
       </button>
       <label className="toggle-label">
         <input

@@ -14,7 +14,7 @@ services:
       -c work_mem=16MB
       -c jit=off
       -c random_page_cost=1.1
-      -c effective_cache_size=4GB
+      -c effective_cache_size=2500MB
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U jlc"]
@@ -47,6 +47,18 @@ services:
       - backend
     restart: unless-stopped
 
+  npm:
+    image: jc21/nginx-proxy-manager:latest
+    network_mode: host
+    volumes:
+      - npm_data:/data
+      - npm_letsencrypt:/etc/letsencrypt
+    environment:
+      DISABLE_IPV6: "true"
+    depends_on:
+      - frontend
+    restart: unless-stopped
+
   ingest:
     build:
       context: .
@@ -67,3 +79,5 @@ services:
 volumes:
   pg_data:
   img_cache:
+  npm_data:
+  npm_letsencrypt:

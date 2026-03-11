@@ -18,7 +18,6 @@ interface Props {
   favoritesOnly: boolean;
   quantities: Record<string, number>;
   onQuantityChange: (lcsc: string, qty: number) => void;
-  cartMode: boolean;
   bomParts: PartSummary[];
   hasFavorites: boolean;
   onClearAll: () => void;
@@ -70,7 +69,7 @@ function Pagination({ page, totalPages, onPageChange }: { page: number; totalPag
   );
 }
 
-export function ResultsList({ results, total, loading, error, query, tookMs, page, totalPages, pageSize, onPageChange, favorites, onToggleFavorite, favoritesOnly, quantities, onQuantityChange, cartMode, bomParts, hasFavorites, onClearAll }: Props) {
+export function ResultsList({ results, total, loading, error, query, tookMs, page, totalPages, pageSize, onPageChange, favorites, onToggleFavorite, favoritesOnly, quantities, onQuantityChange, bomParts, hasFavorites, onClearAll }: Props) {
   if (error) {
     return (
       <div className="results-message error">

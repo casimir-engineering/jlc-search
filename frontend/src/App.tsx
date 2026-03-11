@@ -12,7 +12,7 @@ import { ResultsList } from "./components/ResultsList.tsx";
 import { StatusBar } from "./components/StatusBar.tsx";
 import type { Filters, PartSummary } from "./types.ts";
 
-const DEFAULT_FILTERS: Filters = { partTypes: [], inStock: false, fuzzy: false, sort: "relevance", matchAll: false };
+const DEFAULT_FILTERS: Filters = { partTypes: [], inStock: false, economicOnly: false, fuzzy: false, sort: "relevance", matchAll: false };
 
 export function App() {
   const {
@@ -173,7 +173,6 @@ export function App() {
   }, [favorites, toggleFavorite, initQuantity, results, favResults, bomParts]);
 
   // Cart totals — computed from bomParts (always available when favorites exist)
-  const cartParts = favoritesOnly ? (showFavPage ? favResults : displayResults) : favResults;
   const cartItemCount = bomParts.reduce((count, p) => {
     const qty = quantities[p.lcsc] ?? 0;
     return count + (qty > 0 ? 1 : 0);
@@ -214,7 +213,6 @@ export function App() {
         <FilterBar
           filters={filters}
           onChange={setFilters}
-          favoritesCount={favorites.size}
           cartMode={cartMode}
           onCartModeChange={handleCartModeChange}
           cartItemCount={cartItemCount}
@@ -239,8 +237,6 @@ export function App() {
           favoritesOnly={favoritesOnly}
           quantities={quantities}
           onQuantityChange={setQuantity}
-          cartMode={cartMode}
-          cartParts={cartParts}
           bomParts={bomParts}
           hasFavorites={favorites.size > 0}
           onClearAll={() => { clearFavorites(); handleCartModeChange(false); }}

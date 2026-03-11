@@ -10,6 +10,7 @@ export async function searchParts(
   const params = new URLSearchParams({ q });
   for (const pt of filters.partTypes) params.append("partType", pt);
   if (filters.inStock) params.set("inStock", "true");
+  if (filters.economicOnly) params.set("economic", "true");
   if (filters.fuzzy) params.set("fuzzy", "true");
   if (filters.sort !== "relevance") params.set("sort", filters.sort);
   if (filters.matchAll) params.set("matchAll", "true");

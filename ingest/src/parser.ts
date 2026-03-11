@@ -84,10 +84,9 @@ export function parseComponent(
   else if (/preferred/i.test(rawPartType)) partType = "Preferred";
   else if (/mechanical/i.test(rawPartType)) partType = "Mechanical";
 
-  const pcbaType =
-    partType === "Extended" || partType === "Mechanical"
-      ? "Standard"
-      : "Economic+Standard";
+  // jlcparts CSV doesn't have componentProductType — default to "Standard" (safe fallback).
+  // The bulk update script or JLCPCB API ingest will set the correct value.
+  const pcbaType = "Standard";
 
   const manufacturer = getAttrValue(attrs, "Manufacturer");
   const pkg = getAttrValue(attrs, "Package");

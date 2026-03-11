@@ -93,6 +93,7 @@ interface JlcPart {
   encapsulationNumber?: number;
   minPurchaseNum?: number;
   attributes?: Record<string, unknown>;
+  componentProductType?: number;
 }
 
 interface QueryParams {
@@ -302,10 +303,7 @@ function formatPrices(
 function convertPart(p: JlcPart): PartRow {
   const lcsc = (p.componentCode || "").toUpperCase();
   const partType = mapPartType(p.componentLibraryType);
-  const pcbaType =
-    partType === "Extended" || partType === "Mechanical"
-      ? "Standard"
-      : "Economic+Standard";
+  const pcbaType = p.componentProductType === 2 ? "Standard" : "Economic+Standard";
   const attrsJson = JSON.stringify(p.attributes ?? {});
 
   return {

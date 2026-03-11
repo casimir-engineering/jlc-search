@@ -1,4 +1,4 @@
-.PHONY: dev dev-backend dev-frontend pg ingest build up down logs migrate
+.PHONY: dev dev-backend dev-frontend pg ingest build up down logs migrate deploy configure-npm prod
 
 # Start PostgreSQL for local development
 pg:
@@ -41,3 +41,16 @@ down:
 # View logs
 logs:
 	docker compose logs -f
+
+# Deploy to production (build, start, open firewall)
+deploy:
+	./deploy.sh
+
+# Configure NPM proxy host + SSL (run once after first deploy)
+configure-npm:
+	@test -f .env || { echo "ERROR: .env not found"; exit 1; }
+	@set -a && . ./.env && set +a && bash scripts/configure-npm.sh
+
+# Production: build and start all services
+prod: build up
+	@echo "All services running. Run 'make configure-npm' for first-time NPM setup."

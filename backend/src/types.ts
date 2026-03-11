@@ -40,6 +40,7 @@ export interface SearchParams {
   q: string;
   partTypes: string[];
   inStock: boolean;
+  economic?: boolean;
   fuzzy: boolean;
   limit: number;
   offset: number;

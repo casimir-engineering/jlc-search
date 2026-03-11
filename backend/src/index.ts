@@ -26,12 +26,12 @@ app.use("*", async (c, next) => {
   c.header("Content-Security-Policy", "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'");
 });
 
-// --- Simple IP rate limiter: 200 req/min per IP ---
+// --- Simple IP rate limiter: 200 searches/min per IP ---
 const rateMap = new Map<string, { count: number; reset: number }>();
 const RATE_LIMIT = parseInt(process.env.RATE_LIMIT ?? "200");
 const RATE_WINDOW_MS = 60_000;
-app.use("*", async (c, next) => {
-  const ip = c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ?? c.req.header("x-real-ip") ?? "unknown";
+app.use("/api/search", async (c, next) => {
+  const ip = c.req.header("x-real-ip") ?? c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ?? c.req.header("x-bun-client-ip") ?? "unknown";
   const now = Date.now();
   let entry = rateMap.get(ip);
   if (!entry || now > entry.reset) {
@@ -68,7 +68,11 @@ await waitForDb();
 const server = Bun.serve({
   port,
   hostname: "0.0.0.0",
-  fetch: app.fetch,
+  fetch(req, server) {
+    const addr = server.requestIP(req);
+    if (addr) req.headers.set("x-bun-client-ip", addr.address);
+    return app.fetch(req);
+  },
   maxRequestBodySize: 64 * 1024,  // 64 KB — this is a search API, no large uploads
 });
 

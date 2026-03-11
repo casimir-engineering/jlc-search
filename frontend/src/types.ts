@@ -34,6 +34,7 @@ export type SortOption = "relevance" | "price_asc" | "price_desc" | "stock_desc"
 export interface Filters {
   partTypes: string[];
   inStock: boolean;
+  economicOnly: boolean;
   fuzzy: boolean;
   sort: SortOption;
   matchAll: boolean;
