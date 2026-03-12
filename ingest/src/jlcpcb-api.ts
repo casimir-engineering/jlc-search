@@ -65,6 +65,13 @@ const CATEGORIES = [
   "Relays", "Motor Driver ICs", "Audio Products / Vibration Motors",
   "LED Drivers", "Hardware Fasteners", "IoT/Communication Modules",
   "Displays", "Development Boards & Tools",
+  // Alternate/renamed category names (JLCPCB changes these periodically)
+  "Transistors/Thyristors", "Power Management (PMIC)",
+  "Amplifiers/Comparators", "Data Acquisition", "Optoisolators",
+  "Signal Isolation Devices", "RF and Wireless", "Clock/Timing",
+  "Silicon Carbide (SiC) Devices", "Magnetic Sensors",
+  "Gallium Nitride (GaN) Devices",
+  // Legacy names (kept for completeness, may return 0)
   "Amplifiers", "Data Converters", "Clock and Timing",
   "Power Management", "RF And Wireless", "Isolators",
   "Battery Products", "Fuses", "Wires And Cables",
