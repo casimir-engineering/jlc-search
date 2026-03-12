@@ -7,7 +7,7 @@ import type { PartSummary, SearchParams } from "../types.ts";
 
 const SELECT_COLS = `
   p.lcsc, p.mpn, p.manufacturer, p.description, p.package, p.joints,
-  p.stock, p.price_raw, p.img, p.url, p.part_type, p.pcba_type,
+  p.stock, p.jlc_stock, p.price_raw, p.img, p.url, p.part_type, p.pcba_type,
   p.category, p.subcategory, p.datasheet, p.moq
 `;
 
@@ -136,7 +136,14 @@ export async function search(params: SearchParams): Promise<{ results: PartSumma
   const economicFilter = params.economic
     ? sql`AND p.pcba_type LIKE '%Economic%'`
     : sql``;
-  const stockFilter = params.inStock ? sql`AND p.stock > 0` : sql``;
+  const stockFilter = (() => {
+    switch (params.stockFilter) {
+      case "lcsc": return sql`AND p.stock > 0`;
+      case "jlc": return sql`AND p.jlc_stock > 0`;
+      case "any": return sql`AND (p.stock > 0 OR p.jlc_stock > 0)`;
+      default: return sql``;
+    }
+  })();
   const colFilter = hasColFilter ? sql`AND ${colFilterFrag}` : sql``;
   const rangeFilter = hasRangeFilter ? sql`AND ${buildRangeFilter(sql, numericGroups)}` : sql``;
   const negQuery = buildNegationTsQuery(parsed.negations);

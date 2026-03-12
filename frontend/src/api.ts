@@ -1,15 +1,15 @@
-import type { SearchResponse, SortOption } from "./types.ts";
+import type { SearchResponse, SortOption, StockFilter } from "./types.ts";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 
 export async function searchParts(
   q: string,
-  filters: { partTypes: string[]; inStock: boolean; economicOnly: boolean; fuzzy: boolean; sort: SortOption; matchAll: boolean },
+  filters: { partTypes: string[]; stockFilter: StockFilter; economicOnly: boolean; fuzzy: boolean; sort: SortOption; matchAll: boolean },
   options?: { signal?: AbortSignal; limit?: number; offset?: number }
 ): Promise<SearchResponse> {
   const params = new URLSearchParams({ q });
   for (const pt of filters.partTypes) params.append("partType", pt);
-  if (filters.inStock) params.set("inStock", "true");
+  if (filters.stockFilter !== "none") params.set("stockFilter", filters.stockFilter);
   if (filters.economicOnly) params.set("economic", "true");
   if (filters.fuzzy) params.set("fuzzy", "true");
   if (filters.sort !== "relevance") params.set("sort", filters.sort);

@@ -110,6 +110,7 @@ export function parseComponent(
     package: translateChinese(pkg ?? "") || null,
     joints: comp.joints != null ? Number(comp.joints) : null,
     stock: 0,
+    jlc_stock: 0,
     price_raw: normalizePriceToString(comp.price),
     img: typeof comp.img === "string" && comp.img ? comp.img : null,
     url: typeof comp.url === "string" && comp.url ? comp.url : null,

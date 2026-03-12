@@ -34,6 +34,7 @@ export interface PartRow {
   joints: number | null;
   moq: number | null;
   stock: number;
+  jlc_stock: number;
   price_raw: string;
   img: string | null;
   url: string | null;

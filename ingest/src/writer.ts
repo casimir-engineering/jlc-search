@@ -6,7 +6,7 @@ type Sql = ReturnType<typeof postgres>;
 
 const COLUMNS = [
   "lcsc", "mpn", "manufacturer", "category", "subcategory", "description",
-  "datasheet", "package", "joints", "moq", "stock", "price_raw", "img", "url",
+  "datasheet", "package", "joints", "moq", "stock", "jlc_stock", "price_raw", "img", "url",
   "part_type", "pcba_type", "attributes", "search_text",
 ] as const;
 
@@ -40,6 +40,7 @@ export async function bulkInsertParts(sql: Sql, parts: PartRow[]): Promise<Upser
       joints: p.joints,
       moq: p.moq,
       stock: p.stock,
+      jlc_stock: p.jlc_stock,
       price_raw: p.price_raw,
       img: p.img,
       url: p.url,
@@ -63,6 +64,7 @@ export async function bulkInsertParts(sql: Sql, parts: PartRow[]): Promise<Upser
         joints = COALESCE(EXCLUDED.joints, parts.joints),
         moq = COALESCE(EXCLUDED.moq, parts.moq),
         stock = EXCLUDED.stock,
+        jlc_stock = EXCLUDED.jlc_stock,
         price_raw = EXCLUDED.price_raw,
         img = EXCLUDED.img,
         url = EXCLUDED.url,

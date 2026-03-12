@@ -7,6 +7,7 @@ export interface PartSummary {
   joints: number | null;
   moq: number | null;
   stock: number;
+  jlc_stock: number;
   price_raw: string;
   img: string | null;
   url: string | null;
@@ -31,9 +32,11 @@ export interface PriceTier {
 
 export type SortOption = "relevance" | "price_asc" | "price_desc" | "stock_desc" | "stock_asc";
 
+export type StockFilter = "none" | "jlc" | "lcsc" | "any";
+
 export interface Filters {
   partTypes: string[];
-  inStock: boolean;
+  stockFilter: StockFilter;
   economicOnly: boolean;
   fuzzy: boolean;
   sort: SortOption;

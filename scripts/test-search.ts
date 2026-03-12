@@ -17,7 +17,7 @@ interface TestCase {
 }
 
 interface SearchResult {
-  results: { lcsc: string; mpn: string; manufacturer: string; description: string; stock: number; score?: number }[];
+  results: { lcsc: string; mpn: string; manufacturer: string; description: string; stock: number; jlc_stock: number; score?: number }[];
   total: number;
   took_ms: number;
   query: string;
@@ -167,15 +167,69 @@ const tests: TestCase[] = [
       return null;
     },
   },
+  // ── Stock Filter Tests ────────────────────────────────────────────────
   {
-    name: "In-stock filter: STM32 inStock=true → all results have stock > 0",
+    name: "Stock filter: LCSC → all results have stock > 0",
     query: "STM32",
-    params: { inStock: "true" },
+    params: { stockFilter: "lcsc" },
     check: (r) => {
       if (r.total === 0) return "no results";
       for (const p of r.results.slice(0, 20)) {
         if (p.stock <= 0) return `result ${p.lcsc} has stock=${p.stock}, expected >0`;
       }
+      return null;
+    },
+  },
+  {
+    name: "Stock filter: JLC → all results have jlc_stock > 0 (or no results if not yet populated)",
+    query: "STM32",
+    params: { stockFilter: "jlc" },
+    check: (r) => {
+      // jlc_stock data only exists after JLCPCB API scraper runs — 0 results is valid
+      if (r.total === 0) return null;
+      for (const p of r.results.slice(0, 20)) {
+        if (p.jlc_stock <= 0) return `result ${p.lcsc} has jlc_stock=${p.jlc_stock}, expected >0`;
+      }
+      return null;
+    },
+  },
+  {
+    name: "Stock filter: any → all results have stock > 0 OR jlc_stock > 0",
+    query: "STM32",
+    params: { stockFilter: "any" },
+    check: (r) => {
+      if (r.total === 0) return "no results";
+      for (const p of r.results.slice(0, 20)) {
+        if (p.stock <= 0 && p.jlc_stock <= 0) {
+          return `result ${p.lcsc} has stock=${p.stock}, jlc_stock=${p.jlc_stock}, expected at least one >0`;
+        }
+      }
+      return null;
+    },
+  },
+  {
+    name: "Stock filter: none → returns results",
+    query: "STM32",
+    params: { stockFilter: "none" },
+    check: (r) => {
+      if (r.total === 0) return "no results";
+      return null;
+    },
+  },
+  {
+    name: "Stock filter default (no param) → same as none, returns results",
+    query: "resistor",
+    check: (r) => {
+      if (r.total === 0) return "no results for resistor with default filter";
+      return null;
+    },
+  },
+  {
+    name: "Old inStock param is ignored (backwards compat broken intentionally)",
+    query: "STM32",
+    params: { inStock: "true" },
+    check: (r) => {
+      if (r.total === 0) return "no results";
       return null;
     },
   },

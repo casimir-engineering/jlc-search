@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { searchParts } from "../api.ts";
 import type { Filters, PartSummary } from "../types.ts";
+import { usePersistedFilters } from "./usePersistedFilters.ts";
 
 const PAGE_SIZE = 50;
 
@@ -30,19 +31,12 @@ export function useSearch() {
   const debouncedQuery = useDebounce(query, debounceMs);
   const abortRef = useRef<AbortController | null>(null);
 
-  const [filters, setFiltersState] = useState<Filters>({
-    partTypes: [],
-    inStock: false,
-    economicOnly: false,
-    fuzzy: false,
-    sort: "relevance",
-    matchAll: false,
-  });
+  const { filters, setFilters: updateFilters } = usePersistedFilters();
 
   const setFilters = useCallback((update: Partial<Filters>) => {
-    setFiltersState((prev) => ({ ...prev, ...update }));
+    updateFilters(update);
     setPage(0); // Reset to first page on filter change
-  }, []);
+  }, [updateFilters]);
 
   // Reset page when query changes
   const setQueryAndReset = useCallback((q: string) => {

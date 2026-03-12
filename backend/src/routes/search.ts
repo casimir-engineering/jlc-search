@@ -8,7 +8,10 @@ export const searchRouter = new Hono();
 searchRouter.get("/", async (c) => {
   const q = (c.req.query("q") ?? "").slice(0, 500);
   const partType = (c.req.queries("partType") ?? []).slice(0, 10);
-  const inStock = c.req.query("inStock") === "true";
+  const stockFilterRaw = c.req.query("stockFilter") ?? "none";
+  const stockFilter = ["none", "jlc", "lcsc", "any"].includes(stockFilterRaw)
+    ? stockFilterRaw as "none" | "jlc" | "lcsc" | "any"
+    : "none" as const;
   const economic = c.req.query("economic") === "true";
   const fuzzy = c.req.query("fuzzy") === "true";
   const limit = Math.min(Math.max(1, parseInt(c.req.query("limit") ?? "50") || 50), 200);
@@ -25,7 +28,7 @@ searchRouter.get("/", async (c) => {
 
   const start = performance.now();
   try {
-    const { results, total } = await search({ q, partTypes: partType, inStock, economic, fuzzy, limit, offset, sort, matchAll });
+    const { results, total } = await search({ q, partTypes: partType, stockFilter, economic, fuzzy, limit, offset, sort, matchAll });
     const took_ms = Math.round(performance.now() - start);
 
     // Opportunistic non-blocking refresh for parts missing MOQ/pricing

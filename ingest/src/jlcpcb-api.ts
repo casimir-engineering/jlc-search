@@ -318,6 +318,7 @@ function convertPart(p: JlcPart): PartRow {
     joints: null,
     moq: p.minPurchaseNum ?? null,
     stock: p.stockCount || 0,
+    jlc_stock: p.stockCount || 0,
     price_raw: formatPrices(p.componentPrices || []),
     img: p.minImage || p.componentImageUrl || null,
     url: p.urlSuffix || null,

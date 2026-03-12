@@ -12,7 +12,7 @@ partRouter.get("/batch", async (c) => {
   const sql = getSql();
   const rows = await sql`
     SELECT lcsc, mpn, manufacturer, category, subcategory, description,
-           datasheet, package, joints, stock, price_raw, img, url,
+           datasheet, package, joints, stock, jlc_stock, price_raw, img, url,
            part_type, pcba_type, moq
     FROM parts WHERE lcsc IN ${sql(ids)}
   `;
@@ -28,7 +28,7 @@ partRouter.get("/:lcsc", async (c) => {
 
   const rows = await sql`
     SELECT lcsc, mpn, manufacturer, category, subcategory, description,
-           datasheet, package, joints, stock, price_raw, img, url,
+           datasheet, package, joints, stock, jlc_stock, price_raw, img, url,
            part_type, pcba_type, moq, attributes
     FROM parts WHERE lcsc = ${lcsc}
   `;

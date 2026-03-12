@@ -1,4 +1,4 @@
-import type { Filters, SortOption } from "../types.ts";
+import type { Filters, SortOption, StockFilter } from "../types.ts";
 
 const SORT_OPTIONS: { value: SortOption; label: string }[] = [
   { value: "relevance", label: "Relevance" },
@@ -34,14 +34,16 @@ export function FilterBar({ filters, onChange, cartMode, onCartModeChange, cartI
       >
         Economic asy only
       </button>
-      <label className="toggle-label">
-        <input
-          type="checkbox"
-          checked={filters.inStock}
-          onChange={(e) => onChange({ inStock: e.target.checked })}
-        />
-        In stock
-      </label>
+      <select
+        className="sort-select"
+        value={filters.stockFilter}
+        onChange={(e) => onChange({ stockFilter: e.target.value as StockFilter })}
+      >
+        <option value="none">Any stock level</option>
+        <option value="any">In stock (any)</option>
+        <option value="lcsc">LCSC stock</option>
+        <option value="jlc">JLC stock</option>
+      </select>
       <label className="toggle-label">
         <input
           type="checkbox"

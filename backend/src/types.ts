@@ -9,6 +9,7 @@ export interface PartRow {
   package: string | null;
   joints: number | null;
   stock: number;
+  jlc_stock: number;
   price_raw: string;
   img: string | null;
   url: string | null;
@@ -26,6 +27,7 @@ export interface PartSummary {
   package: string | null;
   joints: number | null;
   stock: number;
+  jlc_stock: number;
   price_raw: string;
   img: string | null;
   url: string | null;
@@ -39,7 +41,7 @@ export interface PartSummary {
 export interface SearchParams {
   q: string;
   partTypes: string[];
-  inStock: boolean;
+  stockFilter: "none" | "jlc" | "lcsc" | "any";
   economic?: boolean;
   fuzzy: boolean;
   limit: number;

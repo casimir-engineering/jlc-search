@@ -11,8 +11,7 @@ import { FilterBar } from "./components/FilterBar.tsx";
 import { ResultsList } from "./components/ResultsList.tsx";
 import { StatusBar } from "./components/StatusBar.tsx";
 import type { Filters, PartSummary } from "./types.ts";
-
-const DEFAULT_FILTERS: Filters = { partTypes: [], inStock: false, economicOnly: false, fuzzy: false, sort: "relevance", matchAll: false };
+import { DEFAULT_FILTERS } from "./hooks/usePersistedFilters.ts";
 
 export function App() {
   const {
@@ -136,7 +135,9 @@ export function App() {
           p.subcategory.toLowerCase().includes(q)
         );
       }
-      if (filters.inStock) items = items.filter((p) => p.stock > 0);
+      if (filters.stockFilter === "lcsc") items = items.filter((p) => p.stock > 0);
+      else if (filters.stockFilter === "jlc") items = items.filter((p) => p.jlc_stock > 0);
+      else if (filters.stockFilter === "any") items = items.filter((p) => p.stock > 0 || p.jlc_stock > 0);
       if (filters.partTypes.length > 0) items = items.filter((p) => filters.partTypes.includes(p.part_type));
       if (filters.sort !== "relevance") {
         items = [...items].sort((a, b) => {

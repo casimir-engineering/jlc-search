@@ -222,9 +222,16 @@ export const PartCard = memo(function PartCard({ part, isFavorite, onToggleFavor
 
         <div className="part-meta">
           <span className="part-stock">
-            <strong>Stock:</strong>{" "}
+            <strong>LCSC:</strong>{" "}
             {part.stock > 0 ? (
               <span className="stock-ok">{part.stock.toLocaleString()}</span>
+            ) : (
+              <span className="stock-zero">0</span>
+            )}
+            {" "}
+            <strong>JLC:</strong>{" "}
+            {part.jlc_stock > 0 ? (
+              <span className="stock-ok">{part.jlc_stock.toLocaleString()}</span>
             ) : (
               <span className="stock-zero">0</span>
             )}

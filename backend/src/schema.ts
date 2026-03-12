@@ -36,6 +36,14 @@ export async function applySchema(sql: Sql): Promise<void> {
     END $$
   `;
 
+  // Add jlc_stock column for JLCPCB warehouse stock (separate from LCSC stock)
+  await sql`
+    DO $$ BEGIN
+      ALTER TABLE parts ADD COLUMN jlc_stock INTEGER NOT NULL DEFAULT 0;
+    EXCEPTION WHEN duplicate_column THEN NULL;
+    END $$
+  `;
+
   // Indexes
   await sql`CREATE INDEX IF NOT EXISTS idx_parts_search ON parts USING GIN(search_vec)`;
   await sql`CREATE INDEX IF NOT EXISTS idx_parts_mpn_trgm ON parts USING GIN(mpn gin_trgm_ops)`;
@@ -44,6 +52,7 @@ export async function applySchema(sql: Sql): Promise<void> {
   await sql`CREATE INDEX IF NOT EXISTS idx_parts_mpn ON parts(mpn)`;
   await sql`CREATE INDEX IF NOT EXISTS idx_parts_type ON parts(part_type)`;
   await sql`CREATE INDEX IF NOT EXISTS idx_parts_stock ON parts(stock)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_parts_jlc_stock ON parts(jlc_stock)`;
   await sql`CREATE INDEX IF NOT EXISTS idx_parts_cat ON parts(category, subcategory)`;
 
   // tsvector trigger function

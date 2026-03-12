@@ -33,6 +33,7 @@ function makePart(id: number, overrides?: Partial<PartRow>): PartRow {
     package: "0402",
     joints: 2,
     stock: 100,
+    jlc_stock: 0,
     price_raw: "1-10:0.01,10-100:0.005",
     img: null,
     url: null,
