@@ -1,12 +1,16 @@
 import { getSql } from "./db.ts";
+import { shouldRefresh, withConcurrencyLimit } from "./refresh-limiter.ts";
 
 const LCSC_API = "https://wmsc.lcsc.com/ftps/wm/product/detail";
 
 /** Fire-and-forget refresh of moq, price_raw, stock from LCSC API. */
 export function refreshFromLcsc(lcsc: string): void {
-  _refresh(lcsc).catch((err) => {
-    if (process.env.DEBUG) console.error(`LCSC refresh ${lcsc}:`, err?.message ?? err);
-  });
+  if (!shouldRefresh("lcsc", lcsc)) return;
+  withConcurrencyLimit("lcsc", () =>
+    _refresh(lcsc).catch((err) => {
+      if (process.env.DEBUG) console.error(`LCSC refresh ${lcsc}:`, err?.message ?? err);
+    }),
+  );
 }
 
 async function _refresh(lcsc: string): Promise<void> {

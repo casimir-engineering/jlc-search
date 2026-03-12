@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { search } from "../search/engine.ts";
 import { refreshFromLcsc } from "../lcsc.ts";
+import { refreshJlcStock } from "../jlcpcb-stock.ts";
 import type { SearchResponse } from "../types.ts";
 
 export const searchRouter = new Hono();
@@ -31,9 +32,10 @@ searchRouter.get("/", async (c) => {
     const { results, total } = await search({ q, partTypes: partType, stockFilter, economic, fuzzy, limit, offset, sort, matchAll });
     const took_ms = Math.round(performance.now() - start);
 
-    // Opportunistic non-blocking refresh for parts missing MOQ/pricing
+    // Opportunistic non-blocking refresh for parts missing MOQ/pricing or JLC stock
     for (const r of results) {
       if ((r as any).moq == null) refreshFromLcsc((r as any).lcsc);
+      if ((r as any).jlc_stock === 0) refreshJlcStock((r as any).lcsc);
     }
 
     return c.json<SearchResponse>({ results, total, took_ms, query: q });

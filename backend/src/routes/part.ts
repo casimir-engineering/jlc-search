@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { getSql } from "../db.ts";
 import { refreshFromLcsc } from "../lcsc.ts";
+import { refreshJlcStock } from "../jlcpcb-stock.ts";
 
 export const partRouter = new Hono();
 
@@ -17,7 +18,10 @@ partRouter.get("/batch", async (c) => {
     FROM parts WHERE lcsc IN ${sql(ids)}
   `;
 
-  for (const row of rows) refreshFromLcsc((row as any).lcsc);
+  for (const row of rows) {
+    refreshFromLcsc((row as any).lcsc);
+    if ((row as any).jlc_stock === 0) refreshJlcStock((row as any).lcsc);
+  }
   return c.json({ results: rows });
 });
 
@@ -38,5 +42,6 @@ partRouter.get("/:lcsc", async (c) => {
   }
 
   refreshFromLcsc(lcsc);
+  if ((rows[0] as any).jlc_stock === 0) refreshJlcStock(lcsc);
   return c.json(rows[0]);
 });
