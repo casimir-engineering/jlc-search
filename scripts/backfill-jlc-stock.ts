@@ -20,8 +20,9 @@ const API_URL =
 const PAGE_SIZE = 100;
 const MAX_PAGES = 1000;
 const MAX_FETCHABLE = MAX_PAGES * PAGE_SIZE; // 100,000
-const DELAY_MS = 300;
-const FLUSH_THRESHOLD = 2_000;
+const DELAY_MS = 100; // delay between batches
+const BATCH_CONCURRENCY = 5; // parallel page fetches per batch
+const FLUSH_THRESHOLD = 5_000;
 const PROGRESS_FILE = "data/jlcpcb-stock-progress.json";
 
 const CATEGORIES = [
@@ -228,8 +229,9 @@ async function processQuery(
     totalFetched++;
   }
 
-  // Remaining pages
-  for (let page = startPage + 1; page <= totalPages; page++) {
+  // Remaining pages — fetch in parallel batches
+  let page = startPage + 1;
+  while (page <= totalPages) {
     if (isStopping()) {
       await flush();
       return { fetched: totalFetched, updated: totalUpdatedThisQuery, stopped: true };
@@ -239,23 +241,33 @@ async function processQuery(
       await flush();
     }
 
-    await Bun.sleep(DELAY_MS);
-    const result = await fetchPage(params, page);
-    if (!result || result.parts.length === 0) break;
+    // Build batch of up to BATCH_CONCURRENCY pages
+    const batchEnd = Math.min(page + BATCH_CONCURRENCY, totalPages + 1);
+    const pageNums = Array.from({ length: batchEnd - page }, (_, i) => page + i);
+    const results = await Promise.all(pageNums.map((p) => fetchPage(params, p)));
 
-    for (const part of result.parts) {
-      if (part.componentCode) {
-        buffer.push({ lcsc: part.componentCode.toUpperCase(), stockCount: part.stockCount ?? 0 });
+    let hitEmpty = false;
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i];
+      if (!result || result.parts.length === 0) { hitEmpty = true; break; }
+      for (const part of result.parts) {
+        if (part.componentCode) {
+          buffer.push({ lcsc: part.componentCode.toUpperCase(), stockCount: part.stockCount ?? 0 });
+        }
+        totalFetched++;
       }
-      totalFetched++;
     }
 
-    progress.currentPage = page;
+    page = batchEnd;
+    progress.currentPage = page - 1;
 
-    if (page % 50 === 0) {
-      const pct = ((page / totalPages) * 100).toFixed(0);
-      console.log(`    Page ${page}/${totalPages} (${pct}%), fetched: ${totalFetched.toLocaleString()}, updated: ${progress.totalUpdated.toLocaleString()} total`);
+    if (page % 50 < BATCH_CONCURRENCY || page > totalPages) {
+      const pct = ((Math.min(page, totalPages) / totalPages) * 100).toFixed(0);
+      console.log(`    Page ${Math.min(page, totalPages)}/${totalPages} (${pct}%), fetched: ${totalFetched.toLocaleString()}, updated: ${progress.totalUpdated.toLocaleString()} total`);
     }
+
+    if (hitEmpty) break;
+    await Bun.sleep(DELAY_MS);
   }
 
   await flush();
