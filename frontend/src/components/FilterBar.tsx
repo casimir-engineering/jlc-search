@@ -1,4 +1,6 @@
+import { useState, useEffect, useRef } from "react";
 import type { Filters, SortOption, StockFilter } from "../types.ts";
+import { fetchCategories } from "../api.ts";
 
 const SORT_OPTIONS: { value: SortOption; label: string }[] = [
   { value: "relevance", label: "Relevance" },
@@ -15,6 +17,80 @@ interface Props {
   onCartModeChange: (v: boolean) => void;
   cartItemCount: number;
   cartTotal: number;
+}
+
+function CategorySelect({ selected, onChange }: { selected: string[]; onChange: (cats: string[]) => void }) {
+  const [categories, setCategories] = useState<{ name: string; count: number }[]>([]);
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    fetchCategories().then(setCategories);
+  }, []);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  const filtered = search
+    ? categories.filter((c) => c.name.toLowerCase().includes(search.toLowerCase()))
+    : categories;
+
+  const toggle = (name: string) => {
+    if (selected.includes(name)) onChange(selected.filter((c) => c !== name));
+    else onChange([...selected, name]);
+  };
+
+  return (
+    <div className="category-select" ref={ref}>
+      <button
+        className={`chip ${selected.length > 0 ? "chip-active" : ""}`}
+        onClick={() => setOpen(!open)}
+      >
+        {selected.length === 0
+          ? "All categories"
+          : selected.length === 1
+            ? selected[0]
+            : `${selected.length} categories`}
+        <span className="chip-arrow">{open ? "\u25B2" : "\u25BC"}</span>
+      </button>
+      {open && (
+        <div className="category-dropdown">
+          <input
+            className="category-search"
+            type="text"
+            placeholder="Filter categories..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            autoFocus
+          />
+          {selected.length > 0 && (
+            <button className="category-clear" onClick={() => { onChange([]); setSearch(""); }}>
+              Clear all
+            </button>
+          )}
+          <div className="category-list">
+            {filtered.map((c) => (
+              <label key={c.name} className={`category-item ${selected.includes(c.name) ? "category-active" : ""}`}>
+                <input
+                  type="checkbox"
+                  checked={selected.includes(c.name)}
+                  onChange={() => toggle(c.name)}
+                />
+                <span className="category-name">{c.name}</span>
+                <span className="category-count">{c.count.toLocaleString()}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function FilterBar({ filters, onChange, cartMode, onCartModeChange, cartItemCount, cartTotal }: Props) {
@@ -34,6 +110,10 @@ export function FilterBar({ filters, onChange, cartMode, onCartModeChange, cartI
       >
         Economic asy only
       </button>
+      <CategorySelect
+        selected={filters.categories}
+        onChange={(categories) => onChange({ categories })}
+      />
       <select
         className="sort-select"
         value={filters.stockFilter}

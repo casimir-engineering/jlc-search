@@ -3,6 +3,18 @@ import { getSql } from "../db.ts";
 
 export const statusRouter = new Hono();
 
+statusRouter.get("/categories", async (c) => {
+  const sql = getSql();
+  const rows = await sql`
+    SELECT category, COUNT(*) AS cnt
+    FROM parts
+    GROUP BY category
+    HAVING COUNT(*) >= 10
+    ORDER BY cnt DESC
+  `;
+  return c.json(rows.map((r) => ({ name: r.category, count: Number(r.cnt) })));
+});
+
 statusRouter.get("/", async (c) => {
   const sql = getSql();
 

@@ -133,6 +133,9 @@ export async function search(params: SearchParams): Promise<{ results: PartSumma
   const typeFilter = params.partTypes.length > 0
     ? sql`AND p.part_type IN ${sql(params.partTypes)}`
     : sql``;
+  const categoryFilter = params.categories.length > 0
+    ? sql`AND p.category IN ${sql(params.categories)}`
+    : sql``;
   const economicFilter = params.economic
     ? sql`AND p.pcba_type LIKE '%Economic%'`
     : sql``;
@@ -161,7 +164,7 @@ export async function search(params: SearchParams): Promise<{ results: PartSumma
       SELECT ${sql.unsafe(SELECT_COLS)}
       FROM parts p
       WHERE p.lcsc = ${code}
-      ${typeFilter} ${economicFilter} ${stockFilter}
+      ${typeFilter} ${categoryFilter} ${economicFilter} ${stockFilter}
       LIMIT 1
     `;
     if (rows.length > 0) {
@@ -181,7 +184,7 @@ export async function search(params: SearchParams): Promise<{ results: PartSumma
       SELECT ${sql.unsafe(SELECT_COLS)}
       FROM parts p
       WHERE TRUE
-      ${rangeFilter} ${colFilter} ${typeFilter} ${economicFilter} ${stockFilter} ${negFilter}
+      ${rangeFilter} ${colFilter} ${typeFilter} ${categoryFilter} ${economicFilter} ${stockFilter} ${negFilter}
       ORDER BY ${orderFrag}
       LIMIT ${fetchLimit} OFFSET ${sqlOffset}
     `;
@@ -220,7 +223,7 @@ export async function search(params: SearchParams): Promise<{ results: PartSumma
       SELECT ${sql.unsafe(SELECT_COLS)}
       FROM parts p
       WHERE p.search_vec @@ to_tsquery('simple', ${andQ})
-      ${rangeFilter} ${colFilter} ${typeFilter} ${economicFilter} ${stockFilter} ${negFilter}
+      ${rangeFilter} ${colFilter} ${typeFilter} ${categoryFilter} ${economicFilter} ${stockFilter} ${negFilter}
       ORDER BY p.stock DESC
       LIMIT ${TIER0_LIMIT}
     `;
@@ -247,7 +250,7 @@ export async function search(params: SearchParams): Promise<{ results: PartSumma
           FROM parts p
           WHERE p.search_vec @@ to_tsquery('simple', ${subQ})
             AND NOT p.search_vec @@ to_tsquery('simple', ${andQ})
-          ${rangeFilter} ${colFilter} ${typeFilter} ${economicFilter} ${stockFilter} ${negFilter}
+          ${rangeFilter} ${colFilter} ${typeFilter} ${categoryFilter} ${economicFilter} ${stockFilter} ${negFilter}
           ORDER BY p.stock DESC
           LIMIT ${needed - tier05Rows.length}
         `;
@@ -306,7 +309,7 @@ export async function search(params: SearchParams): Promise<{ results: PartSumma
           FROM parts p
           WHERE ${mfrWhere}
           ${excludeFilter} ${negFrag}
-          ${rangeFilter} ${colFilter} ${typeFilter} ${economicFilter} ${stockFilter}
+          ${rangeFilter} ${colFilter} ${typeFilter} ${categoryFilter} ${economicFilter} ${stockFilter}
           LIMIT ${T1_MFR_LIMIT}
         `;
         for (const r of t1aRows) {
@@ -333,7 +336,7 @@ export async function search(params: SearchParams): Promise<{ results: PartSumma
           FROM parts p
           WHERE ${ftWhere}
           ${allExcludeFilter} ${negFrag}
-          ${rangeFilter} ${colFilter} ${typeFilter} ${economicFilter} ${stockFilter}
+          ${rangeFilter} ${colFilter} ${typeFilter} ${categoryFilter} ${economicFilter} ${stockFilter}
           LIMIT ${remaining}
         `;
         for (const r of t1bRows) {

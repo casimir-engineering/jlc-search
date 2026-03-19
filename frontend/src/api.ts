@@ -4,11 +4,12 @@ const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 
 export async function searchParts(
   q: string,
-  filters: { partTypes: string[]; stockFilter: StockFilter; economicOnly: boolean; fuzzy: boolean; sort: SortOption; matchAll: boolean },
+  filters: { partTypes: string[]; categories: string[]; stockFilter: StockFilter; economicOnly: boolean; fuzzy: boolean; sort: SortOption; matchAll: boolean },
   options?: { signal?: AbortSignal; limit?: number; offset?: number }
 ): Promise<SearchResponse> {
   const params = new URLSearchParams({ q });
   for (const pt of filters.partTypes) params.append("partType", pt);
+  for (const cat of filters.categories) params.append("category", cat);
   if (filters.stockFilter !== "none") params.set("stockFilter", filters.stockFilter);
   if (filters.economicOnly) params.set("economic", "true");
   if (filters.fuzzy) params.set("fuzzy", "true");
@@ -31,6 +32,12 @@ export async function fetchPartsByIds(
   if (ids.length === 0) return { results: [] };
   const res = await fetch(`${API_BASE}/api/parts/batch?ids=${ids.join(",")}`, { signal });
   if (!res.ok) throw new Error(`Batch fetch failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchCategories(): Promise<{ name: string; count: number }[]> {
+  const res = await fetch(`${API_BASE}/api/status/categories`);
+  if (!res.ok) return [];
   return res.json();
 }
 

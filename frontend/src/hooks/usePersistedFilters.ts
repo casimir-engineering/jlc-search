@@ -2,7 +2,7 @@ import { useState, useCallback } from "react";
 import type { Filters } from "../types.ts";
 
 const STORAGE_KEY = "jlc-filters";
-const FILTER_VERSION = 1; // Bump this when filter shape changes
+const FILTER_VERSION = 2; // Bump this when filter shape changes
 
 interface StoredFilters {
   version: number;
@@ -11,6 +11,7 @@ interface StoredFilters {
 
 const DEFAULT_FILTERS: Filters = {
   partTypes: [],
+  categories: [],
   stockFilter: "none",
   economicOnly: false,
   fuzzy: false,
@@ -33,6 +34,7 @@ function loadFilters(): Filters {
     if (typeof f !== "object" || f === null) return DEFAULT_FILTERS;
     const valid: Filters = {
       partTypes: Array.isArray(f.partTypes) ? f.partTypes : DEFAULT_FILTERS.partTypes,
+      categories: Array.isArray(f.categories) ? f.categories : DEFAULT_FILTERS.categories,
       stockFilter: ["none", "jlc", "lcsc", "any"].includes(f.stockFilter) ? f.stockFilter : DEFAULT_FILTERS.stockFilter,
       economicOnly: typeof f.economicOnly === "boolean" ? f.economicOnly : DEFAULT_FILTERS.economicOnly,
       fuzzy: typeof f.fuzzy === "boolean" ? f.fuzzy : DEFAULT_FILTERS.fuzzy,

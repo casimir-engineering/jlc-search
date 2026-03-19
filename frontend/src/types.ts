@@ -37,6 +37,7 @@ export type StockFilter = "none" | "jlc" | "lcsc" | "any";
 
 export interface Filters {
   partTypes: string[];
+  categories: string[];
   stockFilter: StockFilter;
   economicOnly: boolean;
   fuzzy: boolean;

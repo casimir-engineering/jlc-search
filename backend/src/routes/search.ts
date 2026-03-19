@@ -22,6 +22,7 @@ searchRouter.get("/", async (c) => {
     ? sortRaw as "relevance" | "price_asc" | "price_desc" | "stock_desc" | "stock_asc"
     : "relevance" as const;
   const matchAll = c.req.query("matchAll") === "true";
+  const categories = (c.req.queries("category") ?? []).slice(0, 20);
 
   if (q.trim().length === 0) {
     return c.json<SearchResponse>({ results: [], total: 0, took_ms: 0, query: q });
@@ -29,7 +30,7 @@ searchRouter.get("/", async (c) => {
 
   const start = performance.now();
   try {
-    const { results, total } = await search({ q, partTypes: partType, stockFilter, economic, fuzzy, limit, offset, sort, matchAll });
+    const { results, total } = await search({ q, partTypes: partType, categories, stockFilter, economic, fuzzy, limit, offset, sort, matchAll });
     const took_ms = Math.round(performance.now() - start);
 
     // Opportunistic non-blocking refresh for parts missing MOQ/pricing or JLC stock

@@ -42,6 +42,7 @@ export interface PartSummary {
 export interface SearchParams {
   q: string;
   partTypes: string[];
+  categories: string[];
   stockFilter: "none" | "jlc" | "lcsc" | "any";
   economic?: boolean;
   fuzzy: boolean;
