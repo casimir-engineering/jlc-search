@@ -1,4 +1,4 @@
-import { useState, memo } from "react";
+import { useState, memo, useMemo } from "react";
 import { createPortal } from "react-dom";
 import type { PartSummary } from "../types.ts";
 import { PriceTable } from "./PriceTable.tsx";
@@ -10,6 +10,7 @@ interface Props {
   onToggleFavorite: (lcsc: string) => void;
   quantity?: number;
   onQuantityChange?: (lcsc: string, qty: number) => void;
+  searchQuery?: string;
 }
 
 const PART_TYPE_CLASS: Record<string, string> = {
@@ -33,10 +34,45 @@ function translatePackage(pkg: string): string {
   return pkg;
 }
 
+/** Highlight search terms in text. Returns JSX with <mark> tags around matches. */
+function highlightText(text: string, tokens: string[]): React.ReactNode {
+  if (!tokens.length || !text) return text;
+  const escaped = tokens.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const re = new RegExp(`(${escaped.join("|")})`, "gi");
+  const parts = text.split(re);
+  if (parts.length === 1) return text;
+  return parts.map((part, i) =>
+    re.test(part) ? <mark key={i}>{part}</mark> : part
+  );
+}
+
+/** Extract readable value from jlcparts nested attribute format. */
+function getAttrDisplayValue(entry: unknown): string | null {
+  if (typeof entry === "string") return entry;
+  if (typeof entry === "number" || typeof entry === "boolean") return String(entry);
+  if (typeof entry === "object" && entry !== null && !Array.isArray(entry)) {
+    const e = entry as { primary?: string; default?: string; values?: Record<string, [unknown, string]> };
+    if (e.values) {
+      const pointer = e.primary ?? e.default;
+      if (pointer && e.values[pointer]) {
+        const val = e.values[pointer][0];
+        if (val != null) return String(val);
+      }
+      if (e.values["default"]) {
+        const val = e.values["default"][0];
+        if (val != null) return String(val);
+      }
+    }
+  }
+  return null;
+}
+
+const SKIP_ATTR_KEYS = new Set(["Basic/Extended", "Manufacturer", "Package", "Status"]);
+
 const POPUP_SIZE = 390;
 const POPUP_GAP = 12;
 
-export const PartCard = memo(function PartCard({ part, isFavorite, onToggleFavorite, quantity, onQuantityChange }: Props) {
+export const PartCard = memo(function PartCard({ part, isFavorite, onToggleFavorite, quantity, onQuantityChange, searchQuery }: Props) {
   const [photoSrc] = useState(part.lcsc ? `/api/img/${part.lcsc}` : null);
   const [photoFailed, setPhotoFailed] = useState(false);
   const [schFailed, setSchFailed] = useState(false);
@@ -47,6 +83,24 @@ export const PartCard = memo(function PartCard({ part, isFavorite, onToggleFavor
   const fpSrc = part.lcsc ? `/api/fp/${part.lcsc}?v=9${part.package ? `&pkg=${encodeURIComponent(part.package)}` : ''}` : null;
 
   const pcbaType = part.pcba_type && part.pcba_type !== "unknown" ? part.pcba_type : null;
+
+  // Parse search tokens for highlighting
+  const searchTokens = useMemo(() => {
+    if (!searchQuery) return [];
+    return searchQuery.split(/\s+/).filter(t => t.length >= 2 && !t.startsWith("-"));
+  }, [searchQuery]);
+
+  // Parse attributes for display
+  const attrEntries = useMemo(() => {
+    if (!part.attributes || typeof part.attributes !== "object") return [];
+    const entries: { key: string; value: string }[] = [];
+    for (const [key, raw] of Object.entries(part.attributes)) {
+      if (SKIP_ATTR_KEYS.has(key)) continue;
+      const val = getAttrDisplayValue(raw);
+      if (val && val !== "-" && val !== "null") entries.push({ key, value: val });
+    }
+    return entries;
+  }, [part.attributes]);
 
   const handlePhotoError = () => {
     setPhotoFailed(true);
@@ -199,8 +253,8 @@ export const PartCard = memo(function PartCard({ part, isFavorite, onToggleFavor
 
       <div className="part-card-body">
         <div className="part-header">
-          <span className="part-mpn">{part.mpn || "(no MPN)"}</span>
-          <span className="part-lcsc">{part.lcsc}</span>
+          <span className="part-mpn">{highlightText(part.mpn || "(no MPN)", searchTokens)}</span>
+          <span className="part-lcsc">{highlightText(part.lcsc, searchTokens)}</span>
         </div>
 
         <div className="part-badges">
@@ -217,7 +271,7 @@ export const PartCard = memo(function PartCard({ part, isFavorite, onToggleFavor
 
         <div className="part-category">{part.category} › {part.subcategory}</div>
         {part.description && (
-          <div className="part-desc">{part.description}</div>
+          <div className="part-desc">{highlightText(part.description, searchTokens)}</div>
         )}
 
         <div className="part-meta">
@@ -238,7 +292,7 @@ export const PartCard = memo(function PartCard({ part, isFavorite, onToggleFavor
           </span>
           {part.manufacturer && (
             <span className="part-mfr">
-              <strong>Mfr:</strong> {part.manufacturer}
+              <strong>Mfr:</strong> {highlightText(part.manufacturer, searchTokens)}
             </span>
           )}
           {part.joints != null && (
@@ -247,6 +301,17 @@ export const PartCard = memo(function PartCard({ part, isFavorite, onToggleFavor
             </span>
           )}
         </div>
+
+        {attrEntries.length > 0 && (
+          <div className="part-attrs">
+            {attrEntries.map(({ key, value }) => (
+              <span key={key} className="part-attr">
+                <span className="attr-key">{key}:</span>{" "}
+                <span className="attr-val">{highlightText(value, searchTokens)}</span>
+              </span>
+            ))}
+          </div>
+        )}
 
         <PriceTable priceRaw={part.price_raw} />
 

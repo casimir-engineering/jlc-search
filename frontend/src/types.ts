@@ -16,6 +16,7 @@ export interface PartSummary {
   category: string;
   subcategory: string;
   datasheet: string | null;
+  attributes: Record<string, unknown> | null;
 }
 
 export interface SearchResponse {

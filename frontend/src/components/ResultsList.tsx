@@ -146,7 +146,7 @@ export function ResultsList({ results, total, loading, error, query, tookMs, pag
       <Pagination page={page} totalPages={totalPages} onPageChange={onPageChange} />
       <div className="results-list">
         {results.map((part) => (
-          <PartCard key={part.lcsc} part={part} isFavorite={favorites.has(part.lcsc)} onToggleFavorite={onToggleFavorite} quantity={quantities[part.lcsc]} onQuantityChange={onQuantityChange} />
+          <PartCard key={part.lcsc} part={part} isFavorite={favorites.has(part.lcsc)} onToggleFavorite={onToggleFavorite} quantity={quantities[part.lcsc]} onQuantityChange={onQuantityChange} searchQuery={query} />
         ))}
       </div>
       <Pagination page={page} totalPages={totalPages} onPageChange={onPageChange} />
