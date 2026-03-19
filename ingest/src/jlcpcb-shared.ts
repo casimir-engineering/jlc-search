@@ -13,8 +13,56 @@ export const API_URL =
 export const PAGE_SIZE = 100;
 export const MAX_PAGES = 1000;
 export const MAX_FETCHABLE = MAX_PAGES * PAGE_SIZE; // 100,000
-export const DELAY_MS = 300;
+export const DELAY_MS = 300; // initial delay, overridden by adaptive pacer
 export const BATCH_SIZE = 1000;
+
+/**
+ * Adaptive delay pacer — TCP-like AIMD (Additive Increase, Multiplicative Decrease).
+ * Starts at initialMs, decreases on success, increases on rate limit/error.
+ */
+export class AdaptivePacer {
+  private delay: number;
+  private readonly min: number;
+  private readonly max: number;
+  private successStreak = 0;
+
+  constructor(initialMs = 200, minMs = 50, maxMs = 5000) {
+    this.delay = initialMs;
+    this.min = minMs;
+    this.max = maxMs;
+  }
+
+  /** Call after a successful request. Gradually speeds up. */
+  onSuccess(): void {
+    this.successStreak++;
+    // Decrease by 10ms every 5 successes (additive increase of speed)
+    if (this.successStreak % 5 === 0) {
+      this.delay = Math.max(this.min, this.delay - 10);
+    }
+  }
+
+  /** Call after a rate limit (429) or server error (5xx). Backs off hard. */
+  onRateLimit(): void {
+    this.successStreak = 0;
+    this.delay = Math.min(this.max, this.delay * 2); // multiplicative decrease of speed
+  }
+
+  /** Call after a timeout or network error. Moderate backoff. */
+  onTimeout(): void {
+    this.successStreak = 0;
+    this.delay = Math.min(this.max, Math.floor(this.delay * 1.5));
+  }
+
+  /** Wait the current delay. */
+  async wait(): Promise<void> {
+    await Bun.sleep(this.delay);
+  }
+
+  /** Current delay in ms. */
+  get currentDelay(): number {
+    return this.delay;
+  }
+}
 
 export const LCSC_API = "https://wmsc.lcsc.com/ftps/wm/product/detail";
 export const LCSC_CONCURRENCY = 5;
@@ -79,6 +127,7 @@ export interface ApiQuery {
 export async function fetchPage(
   params: QueryParams,
   page: number,
+  pacer?: AdaptivePacer,
 ): Promise<{ parts: JlcPart[]; total: number } | null> {
   const body: Record<string, unknown> = {
     keyword: "",
@@ -99,8 +148,13 @@ export async function fetchPage(
       });
 
       if (!resp.ok) {
-        console.error(`  HTTP ${resp.status} for page ${page}, retrying...`);
-        await Bun.sleep(2000 * (attempt + 1));
+        if (resp.status === 429 || resp.status >= 500) {
+          pacer?.onRateLimit();
+          console.error(`  HTTP ${resp.status} for page ${page}, backing off to ${pacer?.currentDelay ?? 2000}ms...`);
+        } else {
+          console.error(`  HTTP ${resp.status} for page ${page}, retrying...`);
+        }
+        await Bun.sleep(pacer?.currentDelay ?? 2000 * (attempt + 1));
         continue;
       }
 
@@ -116,13 +170,15 @@ export async function fetchPage(
 
       if (data.code !== 200 || !data.data?.componentPageInfo?.list) return null;
 
+      pacer?.onSuccess();
       return {
         parts: data.data.componentPageInfo.list,
         total: data.data.componentPageInfo.total,
       };
     } catch (err) {
-      console.error(`  Fetch error for page ${page}: ${err}, retrying...`);
-      await Bun.sleep(2000 * (attempt + 1));
+      pacer?.onTimeout();
+      console.error(`  Fetch error for page ${page}: ${err}, retrying (delay=${pacer?.currentDelay ?? '?'}ms)...`);
+      await Bun.sleep(pacer?.currentDelay ?? 2000 * (attempt + 1));
     }
   }
   return null;

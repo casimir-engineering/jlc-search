@@ -23,6 +23,7 @@ import {
   buildWorkQueue,
   buildQueryKey,
   parseCategoryFilter,
+  AdaptivePacer,
   DELAY_MS,
   MAX_PAGES,
   PAGE_SIZE,
@@ -90,6 +91,7 @@ export async function downloadJlcpcb(argv?: string[]): Promise<void> {
   console.log(`\nWork queue: ${manifest.queries.length} queries — ${doneCount} done, ${pendingQueries.length} pending`);
 
   let totalFetched = 0;
+  const pacer = new AdaptivePacer(200, 50, 5000);
 
   for (const entry of pendingQueries) {
     if (stopping) break;
@@ -107,7 +109,7 @@ export async function downloadJlcpcb(argv?: string[]): Promise<void> {
     }
 
     // Fetch first page (or resume page) to get total
-    const firstResult = await fetchPage(entry.params, startPage);
+    const firstResult = await fetchPage(entry.params, startPage, pacer);
     if (!firstResult || firstResult.parts.length === 0) {
       if (startPage === 1) {
         console.log(`[${entry.label}] No results, skipping`);
@@ -140,8 +142,8 @@ export async function downloadJlcpcb(argv?: string[]): Promise<void> {
     for (let page = startPage + 1; page <= totalPages; page++) {
       if (stopping) break;
 
-      await Bun.sleep(DELAY_MS);
-      const result = await fetchPage(entry.params, page);
+      await pacer.wait();
+      const result = await fetchPage(entry.params, page, pacer);
       if (!result || result.parts.length === 0) break;
 
       writeFileSync(
@@ -153,7 +155,7 @@ export async function downloadJlcpcb(argv?: string[]): Promise<void> {
 
       if (page % 50 === 0) {
         const pct = ((page / totalPages) * 100).toFixed(0);
-        console.log(`  Page ${page}/${totalPages} (${pct}%)`);
+        console.log(`  Page ${page}/${totalPages} (${pct}%) delay=${pacer.currentDelay}ms`);
         writeJlcpcbManifest(manifest);
       }
     }
