@@ -1,8 +1,8 @@
 import type postgres from "postgres";
-import type { PartRow, StockData } from "./types.ts";
+import type { PartRow, StockData, DatasheetMeta } from "./types.ts";
 import { extractNumericAttrs } from "./attrs.ts";
 
-type Sql = ReturnType<typeof postgres>;
+export type Sql = ReturnType<typeof postgres>;
 
 const COLUMNS = [
   "lcsc", "mpn", "manufacturer", "category", "subcategory", "description",
@@ -159,4 +159,54 @@ export async function rebuildSearchVectors(sql: Sql): Promise<void> {
     WHERE search_vec IS NULL
   `;
   console.log("  Search vectors rebuilt.");
+}
+
+// ── Datasheet-specific writers ──
+
+/** Append extracted keywords to search_text for a batch of parts. */
+export async function appendSearchKeywords(
+  sql: Sql,
+  updates: { lcsc: string; keywords: string }[],
+): Promise<void> {
+  const CHUNK = 500;
+  for (let i = 0; i < updates.length; i += CHUNK) {
+    const chunk = updates.slice(i, i + CHUNK);
+    const lcscs = chunk.map((u) => u.lcsc);
+    const texts = chunk.map((u) => u.keywords);
+    await sql`
+      UPDATE parts SET
+        search_text = parts.search_text || ' ' || v.extra,
+        search_vec = NULL
+      FROM unnest(${lcscs}::text[], ${texts}::text[]) AS v(lcsc, extra)
+      WHERE parts.lcsc = v.lcsc
+    `;
+  }
+}
+
+/** Insert datasheet-extracted numeric values into part_nums. */
+export async function insertDatasheetNums(
+  sql: Sql,
+  rows: { lcsc: string; unit: string; value: number }[],
+): Promise<void> {
+  if (rows.length === 0) return;
+  const CHUNK = 5000;
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    const chunk = rows.slice(i, i + CHUNK);
+    await sql`INSERT INTO part_nums ${sql(chunk, "lcsc", "unit", "value")}`;
+  }
+}
+
+/** Record datasheet processing status. */
+export async function upsertDatasheetMeta(
+  sql: Sql,
+  meta: DatasheetMeta,
+): Promise<void> {
+  await sql`
+    INSERT INTO datasheet_meta ${sql(meta, "lcsc", "extracted_at", "page_count", "char_count", "props_found")}
+    ON CONFLICT (lcsc) DO UPDATE SET
+      extracted_at = EXCLUDED.extracted_at,
+      page_count = EXCLUDED.page_count,
+      char_count = EXCLUDED.char_count,
+      props_found = EXCLUDED.props_found
+  `;
 }

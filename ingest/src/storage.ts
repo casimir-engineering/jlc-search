@@ -7,11 +7,13 @@ export const JLCPARTS_CATEGORIES_DIR = join(JLCPARTS_DIR, "categories");
 export const JLCPCB_DIR = join(RAW_DIR, "jlcpcb-api");
 export const JLCPCB_PAGES_DIR = join(JLCPCB_DIR, "pages");
 export const LCSC_DIR = join(RAW_DIR, "lcsc");
+export const DATASHEETS_DIR = join(RAW_DIR, "datasheets");
 
 export function ensureRawDirs(): void {
   mkdirSync(JLCPARTS_CATEGORIES_DIR, { recursive: true });
   mkdirSync(JLCPCB_PAGES_DIR, { recursive: true });
   mkdirSync(LCSC_DIR, { recursive: true });
+  mkdirSync(DATASHEETS_DIR, { recursive: true });
 }
 
 /** Sanitize a query key for use as a directory name. */
@@ -55,4 +57,21 @@ export function jlcpcbPagePath(slug: string, pageNum: number): string {
 
 export function lcscEnrichmentPath(): string {
   return join(LCSC_DIR, "enrichment.ndjson");
+}
+
+// Datasheet path builders
+export function datasheetPdfPath(lcsc: string): string {
+  return join(DATASHEETS_DIR, `${lcsc}.pdf`);
+}
+
+export function datasheetTextPath(lcsc: string): string {
+  return join(DATASHEETS_DIR, `${lcsc}.txt`);
+}
+
+export function datasheetUrlsPath(): string {
+  return join(DATASHEETS_DIR, "urls.ndjson");
+}
+
+export function datasheetManifestPath(): string {
+  return join(DATASHEETS_DIR, "manifest.json");
 }

@@ -9,7 +9,10 @@
     "download:jlcpcb": "bun src/download-jlcpcb.ts",
     "download:lcsc": "bun src/download-lcsc.ts",
     "process:jlcparts": "bun src/process-jlcparts.ts",
-    "process:jlcpcb": "bun src/process-jlcpcb.ts"
+    "process:jlcpcb": "bun src/process-jlcpcb.ts",
+    "export:datasheet-urls": "bun src/export-datasheet-urls.ts",
+    "download:datasheets": "bun src/download-datasheets.ts",
+    "process:datasheets": "bun src/process-datasheets.ts"
   },
   "dependencies": {
     "postgres": "^3.4.5"

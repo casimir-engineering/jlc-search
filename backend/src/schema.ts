@@ -100,6 +100,17 @@ export async function applySchema(sql: Sql): Promise<void> {
   await sql`CREATE INDEX IF NOT EXISTS idx_pn_unit_value ON part_nums(unit, value)`;
   await sql`CREATE INDEX IF NOT EXISTS idx_pn_lcsc ON part_nums(lcsc)`;
 
+  // Datasheet extraction tracking
+  await sql`
+    CREATE TABLE IF NOT EXISTS datasheet_meta (
+      lcsc         TEXT PRIMARY KEY REFERENCES parts(lcsc) ON DELETE CASCADE,
+      extracted_at BIGINT NOT NULL,
+      page_count   INTEGER NOT NULL DEFAULT 0,
+      char_count   INTEGER NOT NULL DEFAULT 0,
+      props_found  INTEGER NOT NULL DEFAULT 0
+    )
+  `;
+
   // Ingest metadata
   await sql`
     CREATE TABLE IF NOT EXISTS ingest_meta (

@@ -88,3 +88,42 @@ export interface LcscEnrichmentRecord {
   price_raw?: string;
   stock?: number;
 }
+
+// Datasheet types
+
+export interface DatasheetUrlEntry {
+  lcsc: string;
+  url: string;
+  category: string;
+  subcategory: string;
+}
+
+export interface DatasheetManifest {
+  startedAt: string;
+  completedAt?: string;
+  downloaded: number;
+  failed: number;
+  skipped: number;
+  urlMap: Record<string, string>;       // url → first lcsc that downloaded it
+  failures: Record<string, string>;     // lcsc → error reason
+}
+
+export interface DatasheetMeta {
+  lcsc: string;
+  extracted_at: number;
+  page_count: number;
+  char_count: number;
+  props_found: number;
+}
+
+export interface ExtractedProperty {
+  key: string;         // e.g. "capacitance", "voltage_max", "rds_on"
+  value: number;
+  unit: string;        // V, F, Ohm, etc. (matches part_nums units)
+  source: string;      // "datasheet", "description", "attributes"
+}
+
+export interface ExtractionResult {
+  properties: ExtractedProperty[];
+  keywords: string[];  // search tokens not captured by numeric extraction
+}

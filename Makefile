@@ -1,4 +1,4 @@
-.PHONY: dev dev-backend dev-frontend pg ingest download process build up down logs migrate deploy configure-npm prod
+.PHONY: dev dev-backend dev-frontend pg ingest download process build up down logs migrate deploy configure-npm prod export-datasheet-urls download-datasheets process-datasheets datasheets
 
 # Start PostgreSQL for local development
 pg:
@@ -32,6 +32,18 @@ download:
 process: pg
 	bun run ingest/src/process-jlcparts.ts
 	bun run ingest/src/process-jlcpcb.ts
+
+# Datasheet pipeline: export URLs from DB, download+extract, process
+export-datasheet-urls: pg
+	bun run ingest/src/export-datasheet-urls.ts
+
+download-datasheets:
+	bun run ingest/src/download-datasheets.ts
+
+process-datasheets: pg
+	bun run ingest/src/process-datasheets.ts
+
+datasheets: export-datasheet-urls download-datasheets process-datasheets
 
 # Run ingest in Docker
 ingest:
