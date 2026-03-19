@@ -182,16 +182,31 @@ make deploy           # Production deployment
 ## Component Text Extraction (`component-text.ts`)
 
 Source-agnostic extractor: works with datasheets, descriptions, or any text.
-Category-specific regex extractors:
+Category-specific regex extractors (42 functions, 4036 lines):
 - **Resistors**: tolerance (most-frequent), TCR, power rating, max voltage
 - **Capacitors**: ESR, dissipation factor, ripple current, temp coeff keywords (X7R/C0G/NP0)
 - **Inductors**: DCR/RDC, Isat, Irms, SRF (inline + table scanner for multi-line headers)
 - **Diodes**: VF, VRRM, VBR, VZ (Zener), trr, IF(AV)
 - **Transistors/MOSFETs**: VDS, RDS(on), Qg, Id, Vgs(th)
 - **ICs**: Vcc range (widest-range logic), Iq, protocol keywords
+- **Connectors**: current/voltage rating, pitch, contact resistance, mating cycles, IP rating
+- **Circuit Protection**: TVS (VRWM, VBR, VC, IPP), fuses (rated current, I²t), PTC (hold/trip), varistors (V1mA, energy), GDT (sparkover)
+- **Crystals/Oscillators**: frequency, load capacitance, tolerance/stability (ppm), ESR, supply voltage
+- **Optoelectronics**: VF, wavelength, luminous intensity, viewing angle, CTR, isolation, dark current, color keywords
+- **Sensors**: NTC (R25, B-value), temperature accuracy, pressure range, Hall (BOP/BRP), current sensitivity
+- **Switches**: contact rating, contact resistance, mechanical life, actuation force, travel
+- **Relays**: coil voltage/resistance/power, contact rating, operate/release time, electrical/mechanical endurance
+- **Memory**: capacity (Kbit-Gbit), organization, clock speed, endurance, retention, access time
+- **Logic**: propagation delay, IOH/IOL, max frequency, gate count, logic family keywords
+- **Power**: Vin/Vout range, Iout, efficiency, Iq, switching freq, dropout, isolation, topology keywords
+- **Filters**: impedance@freq, DCR, rated current, insertion loss, bandwidth, cutoff frequency
+- **RF/Wireless**: TX power, RX sensitivity, gain, noise figure, P1dB, IP3, frequency range
+- **Audio**: SPL, resonant frequency, impedance, sensitivity, SNR
+- **Displays**: resolution, display size, brightness, contrast ratio, driver IC keywords
+- **IoT Modules**: TX power, RX sensitivity, frequency band, supply voltage, chipset/protocol keywords
 
-Table-aware: `scanTable()` handles pdftotext -layout multi-line headers.
-Spec-row scanner: `scanSpecRow()` strips test conditions, skips pin assignments.
+Table-aware: `scanTable()` handles pdftotext -layout multi-line headers (8-line window).
+Spec-row scanner: `scanSpecRow()` strips test conditions, skips pin assignments, multi-line fallback.
 
 ## Environment Variables
 
