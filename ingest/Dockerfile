@@ -18,4 +18,5 @@ ENV INGEST_CONCURRENCY=4
 RUN addgroup --gid 1000 app && adduser --disabled-password --uid 1000 --ingroup app app
 USER app
 
-CMD ["bun", "run", "ingest/src/ingest.ts"]
+ENTRYPOINT ["bun", "run"]
+CMD ["ingest/src/ingest.ts"]

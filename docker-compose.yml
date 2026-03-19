@@ -66,6 +66,7 @@ services:
     network_mode: host
     volumes:
       - img_cache:/app/data/img
+      - raw_data:/app/data/raw
     environment:
       DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env}
       JLCPARTS_BASE: https://yaqwsx.github.io/jlcparts
@@ -79,5 +80,6 @@ services:
 volumes:
   pg_data:
   img_cache:
+  raw_data:
   npm_data:
   npm_letsencrypt:

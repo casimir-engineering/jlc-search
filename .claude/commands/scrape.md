@@ -4,10 +4,22 @@ You are the **outer loop controller** for the jlc-search scraping pipeline. Your
 
 ## Scrapers
 
-1. **jlcparts ingest** (`ingest/src/ingest.ts`) — Fetches from the jlcparts community mirror. Uses hash-based change detection. Run with: `~/.bun/bin/bun run ingest/src/ingest.ts`
-2. **JLCPCB API ingest** (`ingest/src/jlcpcb-api.ts`) — Fetches directly from JLCPCB's API. Auto-resumes from `data/jlcpcb-progress.json`. Run with: `~/.bun/bin/bun run ingest/src/jlcpcb-api.ts`
+The pipeline is split into download (no DB needed) and process (needs DB) phases:
 
-Both scrapers share the same PostgreSQL database and use `ON CONFLICT DO UPDATE` upserts, so they're safe to run in any order.
+### Download scripts (network only, no DB)
+1. **jlcparts download** (`ingest/src/download-jlcparts.ts`) — Downloads from the jlcparts community mirror to `data/raw/jlcparts/`. Run with: `~/.bun/bin/bun run ingest/src/download-jlcparts.ts`
+2. **JLCPCB API download** (`ingest/src/download-jlcpcb.ts`) — Downloads from JLCPCB's API to `data/raw/jlcpcb-api/`. Supports resume via manifest. Run with: `~/.bun/bin/bun run ingest/src/download-jlcpcb.ts`
+3. **LCSC enrichment download** (`ingest/src/download-lcsc.ts`) — Downloads LCSC product details to `data/raw/lcsc/enrichment.ndjson`. Requires JLCPCB download first. Run with: `~/.bun/bin/bun run ingest/src/download-lcsc.ts`
+
+### Process scripts (needs PostgreSQL)
+4. **jlcparts process** (`ingest/src/process-jlcparts.ts`) — Reads raw files and populates DB. Run with: `~/.bun/bin/bun run ingest/src/process-jlcparts.ts`
+5. **JLCPCB process** (`ingest/src/process-jlcpcb.ts`) — Reads page files + LCSC enrichment and populates DB. Run with: `~/.bun/bin/bun run ingest/src/process-jlcpcb.ts`
+
+### Combined wrappers (backward compatible)
+- `ingest/src/ingest.ts` — runs download-jlcparts → process-jlcparts
+- `ingest/src/jlcpcb-api.ts` — runs download-jlcpcb → download-lcsc → process-jlcpcb
+
+All scrapers share the same PostgreSQL database and use `ON CONFLICT DO UPDATE` upserts, so they're safe to run in any order.
 
 ## Outer Loop Protocol
 
@@ -16,7 +28,7 @@ Both scrapers share the same PostgreSQL database and use `ON CONFLICT DO UPDATE`
 Before starting any scraper:
 - Verify PostgreSQL is running: `pg_isready -h localhost -p 5432`
 - Check current DB state: connect and run `SELECT COUNT(*) FROM parts`
-- Check for prior progress files (`data/jlcpcb-progress.json`)
+- Check for prior manifest (`data/raw/jlcpcb-api/manifest.json`)
 - Read the outer loop log (`data/scrape-log.md`) if it exists, to learn from prior runs
 - Report the current state to the user
 
@@ -24,8 +36,8 @@ Before starting any scraper:
 
 Launch **3 agents simultaneously**:
 
-1. **Agent 1 — jlcparts ingest** (`ingest/src/ingest.ts`): Run in a background subagent with `isolation: "worktree"`. Fetches from the jlcparts community mirror.
-2. **Agent 2 — JLCPCB API ingest** (`ingest/src/jlcpcb-api.ts`): Run in a background subagent with `isolation: "worktree"`. Fetches directly from JLCPCB API.
+1. **Agent 1 — jlcparts pipeline**: Run in a background subagent with `isolation: "worktree"`. Run download-jlcparts.ts then process-jlcparts.ts.
+2. **Agent 2 — JLCPCB pipeline**: Run in a background subagent with `isolation: "worktree"`. Run download-jlcpcb.ts then download-lcsc.ts then process-jlcpcb.ts.
 3. **Agent 3 — Coverage monitor**: Run in the background. Periodically checks `SELECT COUNT(*) FROM parts` and reports progress. Probes the JLCPCB API for total available parts per category to calculate real-time coverage.
 
 Each scraper agent should:
@@ -34,7 +46,7 @@ Each scraper agent should:
 - If the scraper exits cleanly, report stats back
 - If the scraper crashes or stalls, capture the error output
 
-Both scrapers write to the same PostgreSQL database with upserts, so running in parallel is safe.
+Both pipelines write to the same PostgreSQL database with upserts, so running in parallel is safe.
 
 ### 3. On Failure — Diagnose and Fix
 
@@ -71,7 +83,7 @@ Compare against known JLCPCB totals (probe the API for each category's total) an
 ### 5. Completion Criteria
 
 The job is "done" when:
-- Both scrapers have run to completion (all categories processed)
+- Both pipelines have run to completion (all categories processed)
 - No more retryable errors remain
 - Coverage report has been generated
 
@@ -94,11 +106,11 @@ Append to `data/scrape-log.md`:
 
 ### Pre-flight
 - DB parts: X
-- Progress file: exists/absent
+- Manifest: exists/absent
 - Prior failures: ...
 
 ### Attempt N
-- Scraper: jlcpcb-api / ingest
+- Scraper: download-jlcpcb / download-lcsc / process-jlcpcb / download-jlcparts / process-jlcparts
 - Duration: Xm
 - Result: success / failure
 - Error: (if failed) ...
@@ -124,5 +136,5 @@ Append to `data/scrape-log.md`:
 - **Always use subagents** for running scrapers — never block the outer loop
 - **Always log** before retrying — don't silently retry
 - **Don't modify the database schema** — only modify ingest code
-- **Resume, don't restart** — both scrapers support resume, use it
+- **Resume, don't restart** — download scripts support resume, use it
 - The shared database is at `postgres://jlc:jlc@localhost:5432/jlc`

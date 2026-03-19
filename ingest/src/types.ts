@@ -52,3 +52,39 @@ export interface IngestMeta {
   stockhash: string;
   ingested_at: number;
 }
+
+// Raw data storage types
+
+export interface JlcpartsHashes {
+  [sourcename: string]: { datahash: string; stockhash: string; downloadedAt: string };
+}
+
+export interface JlcpcbRunManifest {
+  startedAt: string;
+  completedAt?: string;
+  queries: JlcpcbQueryEntry[];
+}
+
+export interface JlcpcbQueryEntry {
+  key: string;
+  slug: string;
+  label: string;
+  params: QueryParams;
+  totalParts: number;
+  pagesDownloaded: number;
+  complete: boolean;
+}
+
+export interface QueryParams {
+  firstSortName: string;
+  secondSortName?: string;
+  stockFlag?: number;
+  componentLibraryType?: string;
+}
+
+export interface LcscEnrichmentRecord {
+  lcsc: string;
+  moq?: number;
+  price_raw?: string;
+  stock?: number;
+}

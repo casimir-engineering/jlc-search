@@ -4,7 +4,12 @@
   "type": "module",
   "scripts": {
     "start": "bun src/ingest.ts",
-    "ingest": "bun src/ingest.ts"
+    "ingest": "bun src/ingest.ts",
+    "download:jlcparts": "bun src/download-jlcparts.ts",
+    "download:jlcpcb": "bun src/download-jlcpcb.ts",
+    "download:lcsc": "bun src/download-lcsc.ts",
+    "process:jlcparts": "bun src/process-jlcparts.ts",
+    "process:jlcpcb": "bun src/process-jlcpcb.ts"
   },
   "dependencies": {
     "postgres": "^3.4.5"

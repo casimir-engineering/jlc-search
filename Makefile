@@ -1,4 +1,4 @@
-.PHONY: dev dev-backend dev-frontend pg ingest build up down logs migrate deploy configure-npm prod
+.PHONY: dev dev-backend dev-frontend pg ingest download process build up down logs migrate deploy configure-npm prod
 
 # Start PostgreSQL for local development
 pg:
@@ -21,6 +21,17 @@ dev-frontend:
 # Migrate SQLite data to PostgreSQL
 migrate: pg
 	bun run scripts/migrate-sqlite-to-pg.ts
+
+# Download only (no DB needed)
+download:
+	bun run ingest/src/download-jlcparts.ts
+	bun run ingest/src/download-jlcpcb.ts
+	bun run ingest/src/download-lcsc.ts
+
+# Process only (needs pg running, assumes raw data exists)
+process: pg
+	bun run ingest/src/process-jlcparts.ts
+	bun run ingest/src/process-jlcpcb.ts
 
 # Run ingest in Docker
 ingest:
