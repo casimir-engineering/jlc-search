@@ -130,7 +130,70 @@ SELECT COUNT(*) FROM parts WHERE search_vec IS NULL;
 4. Relaunch the failed step
 5. Loop until clean
 
-### Phase 4: Final Report
+### Phase 4: Relaunch App & Health Check
+
+After all ingestion and verification is complete, restart the application and confirm it's healthy.
+
+#### 1. Rebuild and restart services
+```bash
+cd /root/jlc-search
+# If running via Docker:
+docker compose build backend frontend 2>&1 | tail -5
+docker compose up -d backend frontend 2>&1
+
+# If running locally (dev mode):
+# Kill existing processes
+pkill -f "bun run src/index.ts" 2>/dev/null || true
+pkill -f "vite" 2>/dev/null || true
+# Restart
+set -a && . ./.env && set +a
+cd backend && ~/.bun/bin/bun run src/index.ts &
+cd ../frontend && npm run dev &
+```
+
+#### 2. Wait for backend to be ready, then health check
+```bash
+sleep 3
+# Check backend is responding
+curl -sf http://localhost:3001/api/status | python3 -m json.tool
+# Check search works
+curl -sf "http://localhost:3001/api/search?q=100nF&limit=3" | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+print(f'Search OK: {d[\"total\"]} results in {d[\"took_ms\"]}ms')
+assert d['total'] > 0, 'Search returned 0 results!'
+"
+# Check frontend is serving (if running)
+curl -sf http://localhost:3000/ | head -1 && echo "Frontend OK" || echo "Frontend not running (may be Docker-only)"
+```
+
+#### 3. If anything fails — fix loop
+If the backend doesn't start or search returns errors:
+1. **Capture the error**: check `docker compose logs backend --tail 50` or the process stderr
+2. **Log it to the journal** with your diagnosis
+3. **Launch a fix agent** to:
+   - Read the error
+   - Identify the root cause (schema mismatch, missing column, port conflict, dependency issue)
+   - Make a targeted fix
+   - Restart and re-test
+4. **Loop until the health check passes**
+
+Common issues after ingestion:
+- Schema changes not applied (new tables/columns) → backend calls `applySchema()` on startup, should self-heal
+- Port already in use → find and kill the old process: `lsof -i :3001`
+- Frontend build stale → `cd frontend && npm run build`
+- Docker image stale → `docker compose build --no-cache backend`
+
+#### 4. Log the app status to the journal
+```markdown
+### App Health Check
+- Backend: running / failed (error: ...)
+- Search test: X results in Yms
+- Frontend: running / not applicable
+- Fix attempts: N (describe if any)
+```
+
+### Phase 5: Final Report
 
 Append to `data/scrape-log.md`:
 
@@ -176,6 +239,12 @@ Append to `data/scrape-log.md`:
 - Final delay: Xms
 - Rate limit events: X
 - Timeout events: X
+
+### App Health Check
+- Backend: running / restarted after fix
+- Search test: X results in Yms for "100nF"
+- Frontend: running / Docker-only
+- Fix attempts: 0
 
 ### Self-Reflection
 - What worked well
