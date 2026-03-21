@@ -60,62 +60,79 @@ async function getImgField(lcsc: string): Promise<string | null> {
   return (rows[0]?.img as string) ?? null;
 }
 
-/** Fetch image from LCSC in the background and cache it to disk. */
+const JLCPCB_API = "https://jlcpcb.com/api/overseas-pcb-order/v1/shoppingCart/smtGood/selectSmtComponentList";
+const JLCPCB_FILE_API = "https://jlcpcb.com/api/file/downloadByFileSystemAccessId/";
+
+/** Try JLCPCB accessId API — covers ~80% of parts, no auth needed. */
+async function tryJlcpcbAccessId(lcsc: string): Promise<ArrayBuffer | null> {
+  try {
+    const resp = await fetch(JLCPCB_API, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ keyword: lcsc, pageSize: 1, currentPage: 1 }),
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (!resp.ok) return null;
+    const data = await resp.json() as any;
+    const part = data?.data?.componentPageInfo?.list?.[0];
+    const accessId = part?.productBigImageAccessId || part?.minImageAccessId;
+    if (!accessId) return null;
+
+    const imgResp = await fetch(`${JLCPCB_FILE_API}${accessId}`, {
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!imgResp.ok) return null;
+    const buf = await imgResp.arrayBuffer();
+    return buf.byteLength >= 500 ? buf : null;
+  } catch { return null; }
+}
+
+/** Fetch image in background and cache to disk. Tries: JLCPCB accessId → direct CDN → wsrv.nl proxy. */
 async function downloadImage(lcsc: string): Promise<void> {
   if (downloading.has(lcsc)) return;
   downloading.add(lcsc);
   let succeeded = false;
   try {
-    // Try DB img field first — direct CDN URL, no HTML scraping needed
-    const imgField = await getImgField(lcsc);
-    let cdnUrl: string | null = null;
-
-    if (imgField) {
-      if (imgField.startsWith("http")) {
-        // Full URL stored in DB — upgrade 96x96 thumbnails to 900x900
-        cdnUrl = imgField.replace("/96x96/", "/900x900/");
-      } else {
-        // Bare filename — prepend CDN base
-        cdnUrl = LCSC_CDN + imgField;
-      }
-    } else {
-      // Fall back to scraping product detail page
-      const pageResp = await fetch(`https://www.lcsc.com/product-detail/${lcsc}.html`, {
-        headers: LCSC_HEADERS,
-        signal: AbortSignal.timeout(15_000),
-      });
-      if (!pageResp.ok) return;
-      const html = await pageResp.text();
-      const match = html.match(/https:\/\/assets\.lcsc\.com\/images\/lcsc\/[^\s"'<>]+\.jpg/i);
-      if (!match) return;
-      cdnUrl = match[0];
-    }
-
-    // Try direct CDN first, fall back to wsrv.nl proxy if blocked (403)
     let buf: ArrayBuffer | null = null;
-    try {
-      const imgResp = await fetch(cdnUrl, {
-        headers: { ...LCSC_HEADERS, Accept: "image/webp,image/jpeg,image/*" },
-        signal: AbortSignal.timeout(10_000),
-      });
-      if (imgResp.ok) {
-        const data = await imgResp.arrayBuffer();
-        if (data.byteLength >= 500) buf = data;
-      }
-    } catch { /* direct failed */ }
 
-    // Fallback: wsrv.nl proxy (bypasses CDN IP blocks)
+    // Tier 1: JLCPCB accessId API (fastest, no IP block issues)
+    buf = await tryJlcpcbAccessId(lcsc);
+
+    // Tier 2: Direct LCSC CDN (works if not IP-blocked)
     if (!buf) {
-      try {
-        const proxyUrl = `${WSRV_PROXY}${encodeURIComponent(cdnUrl)}&w=900&h=900`;
-        const proxyResp = await fetch(proxyUrl, {
-          signal: AbortSignal.timeout(15_000),
-        });
-        if (proxyResp.ok) {
-          const data = await proxyResp.arrayBuffer();
-          if (data.byteLength >= 500) buf = data;
+      const imgField = await getImgField(lcsc);
+      let cdnUrl: string | null = null;
+      if (imgField) {
+        cdnUrl = imgField.startsWith("http")
+          ? imgField.replace("/96x96/", "/900x900/")
+          : LCSC_CDN + imgField;
+      }
+      if (cdnUrl) {
+        try {
+          const imgResp = await fetch(cdnUrl, {
+            headers: { ...LCSC_HEADERS, Accept: "image/webp,image/jpeg,image/*" },
+            signal: AbortSignal.timeout(8_000),
+          });
+          if (imgResp.ok) {
+            const data = await imgResp.arrayBuffer();
+            if (data.byteLength >= 500) buf = data;
+          }
+        } catch { /* direct failed */ }
+
+        // Tier 3: wsrv.nl proxy (bypasses CDN IP blocks)
+        if (!buf) {
+          try {
+            const proxyUrl = `${WSRV_PROXY}${encodeURIComponent(cdnUrl)}&w=900&h=900`;
+            const proxyResp = await fetch(proxyUrl, {
+              signal: AbortSignal.timeout(15_000),
+            });
+            if (proxyResp.ok) {
+              const data = await proxyResp.arrayBuffer();
+              if (data.byteLength >= 500) buf = data;
+            }
+          } catch { /* proxy also failed */ }
         }
-      } catch { /* proxy also failed */ }
+      }
     }
 
     if (!buf) return;
