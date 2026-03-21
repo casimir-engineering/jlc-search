@@ -3,7 +3,7 @@ import { useSearch } from "./hooks/useSearch.ts";
 import { useFavorites } from "./hooks/useFavorites.ts";
 import { useCart } from "./hooks/useCart.ts";
 import { useLiveRefresh } from "./hooks/useLiveRefresh.ts";
-import { getMoq, getLineTotal, getUnitPrice } from "./utils/price.ts";
+import { getLineTotal, getUnitPrice } from "./utils/price.ts";
 import { decodeCartFromHash } from "./utils/share.ts";
 import { fetchPartsByIds } from "./api.ts";
 import { SearchBar } from "./components/SearchBar.tsx";
@@ -168,7 +168,7 @@ export function App() {
       const allParts = [...results, ...favResults, ...bomParts];
       const part = allParts.find((p) => p.lcsc === lcsc);
       if (part) {
-        initQuantity(lcsc, getMoq(part.price_raw, part.moq));
+        initQuantity(lcsc, 1);
       }
     }
   }, [favorites, toggleFavorite, initQuantity, results, favResults, bomParts]);

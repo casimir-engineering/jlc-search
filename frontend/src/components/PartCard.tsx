@@ -2,7 +2,7 @@ import { useState, memo, useMemo } from "react";
 import { createPortal } from "react-dom";
 import type { PartSummary } from "../types.ts";
 import { PriceTable } from "./PriceTable.tsx";
-import { getMoq, getUnitPrice, getLineTotal, roundToMoqMultiple } from "../utils/price.ts";
+import { getUnitPrice, getLineTotal } from "../utils/price.ts";
 
 interface Props {
   part: PartSummary;
@@ -177,13 +177,6 @@ export const PartCard = memo(function PartCard({ part, isFavorite, onToggleFavor
               onChange={(e) => {
                 const val = parseInt(e.target.value, 10);
                 if (!isNaN(val) && val > 0) onQuantityChange(part.lcsc, val);
-              }}
-              onBlur={() => {
-                if (quantity != null && quantity > 0) {
-                  const moq = getMoq(part.price_raw, part.moq);
-                  const rounded = roundToMoqMultiple(quantity, moq);
-                  if (rounded !== quantity) onQuantityChange(part.lcsc, rounded);
-                }
               }}
             />
             {quantity != null && quantity > 0 && (
