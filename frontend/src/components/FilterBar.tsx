@@ -98,18 +98,14 @@ export function FilterBar({ filters, onChange, cartMode, onCartModeChange, cartI
 
   return (
     <div className="filter-bar">
-      <button
-        className={`chip ${basicActive ? "chip-active" : ""}`}
-        onClick={() => onChange({ partTypes: basicActive ? [] : ["Basic"] })}
-      >
-        Basic only
-      </button>
-      <button
-        className={`chip ${filters.economicOnly ? "chip-active" : ""}`}
-        onClick={() => onChange({ economicOnly: !filters.economicOnly })}
-      >
-        Economic asy only
-      </button>
+      <label className="toggle-label">
+        <input type="checkbox" checked={basicActive} onChange={() => onChange({ partTypes: basicActive ? [] : ["Basic"] })} />
+        Basic
+      </label>
+      <label className="toggle-label">
+        <input type="checkbox" checked={filters.economicOnly} onChange={() => onChange({ economicOnly: !filters.economicOnly })} />
+        Economic
+      </label>
       <CategorySelect
         selected={filters.categories}
         onChange={(categories) => onChange({ categories })}
