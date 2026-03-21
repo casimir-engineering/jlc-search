@@ -15,7 +15,7 @@ searchRouter.get("/", async (c) => {
     : "none" as const;
   const economic = c.req.query("economic") === "true";
   const fuzzy = c.req.query("fuzzy") === "true";
-  const limit = Math.min(Math.max(1, parseInt(c.req.query("limit") ?? "50") || 50), 200);
+  const limit = Math.min(Math.max(1, parseInt(c.req.query("limit") ?? "50") || 50), 500);
   const offset = Math.min(Math.max(0, parseInt(c.req.query("offset") ?? "0") || 0), 100_000);
   const sortRaw = c.req.query("sort") ?? "relevance";
   const sort = ["relevance", "price_asc", "price_desc", "stock_desc", "stock_asc"].includes(sortRaw)

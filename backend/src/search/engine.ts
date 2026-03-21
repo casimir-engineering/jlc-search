@@ -212,10 +212,10 @@ export async function search(params: SearchParams): Promise<{ results: PartSumma
 
   const isMultiToken = !params.matchAll && textQuery.includes(" ");
 
-  // Keep limits modest so Tier 1 (substring) results appear within reach.
-  // Tier 0 ORDER BY stock DESC is fast regardless of limit (B-tree index scan).
-  const TIER0_LIMIT = 150;
-  const TIER1_LIMIT = 200;
+  // Tier limits: how many rows each tier fetches for ranking.
+  // Total displayed = deduped union of all tiers, paginated by offset/limit.
+  const TIER0_LIMIT = 500;
+  const TIER1_LIMIT = 500;
 
   try {
     // ── Tier 0: FTS prefix match (fast, highest quality) ──────────
@@ -368,20 +368,43 @@ export async function search(params: SearchParams): Promise<{ results: PartSumma
       })),
     ];
 
-    const totalCount = results.length;
+    // True total count from FTS (Tier 0 conditions) — not capped by tier limits
+    const [countRow] = await sql`
+      SELECT COUNT(*) AS cnt FROM parts p
+      WHERE p.search_vec @@ to_tsquery('simple', ${andQ})
+      ${rangeFilter} ${colFilter} ${typeFilter} ${categoryFilter} ${economicFilter} ${stockFilter} ${negFilter}
+    `;
+    const totalCount = Math.max(Number(countRow?.cnt ?? 0), results.length);
+
+    // Deep pagination: if offset is beyond what tiers fetched, use SQL-level pagination
+    if (offset >= results.length && !isRelevanceSort) {
+      const orderFrag = params.sort === "price_asc" || params.sort === "price_desc"
+        ? sql`p.stock DESC` // price sort done in-app after fetch
+        : params.sort === "stock_asc" ? sql`p.stock ASC`
+        : sql`p.stock DESC`;
+      const deepRows = await sql`
+        SELECT ${sql.unsafe(SELECT_COLS)}
+        FROM parts p
+        WHERE p.search_vec @@ to_tsquery('simple', ${andQ})
+        ${rangeFilter} ${colFilter} ${typeFilter} ${categoryFilter} ${economicFilter} ${stockFilter} ${negFilter}
+        ORDER BY ${orderFrag}
+        LIMIT ${limit} OFFSET ${offset}
+      `;
+      let deepResults = deepRows.map((r) => ({ ...(r as unknown as PartSummary), score: 0 }));
+      if (isPriceSort) {
+        deepResults = applySortToResults(deepResults, params.sort);
+      }
+      return { results: deepResults.slice(0, limit), total: totalCount };
+    }
 
     if (isRelevanceSort) {
       results = applyBoost(results, textQuery).slice(offset, offset + limit);
     } else if (isPriceSort) {
       results = applySortToResults(results, params.sort).slice(offset, offset + limit);
     } else {
-      // stock_desc / stock_asc
       if (params.sort === "stock_asc") {
         results = [...results].sort((a, b) => a.stock - b.stock);
-      }
-      // stock_desc: already ordered within each tier by stock DESC,
-      // but we need to re-sort across tiers
-      else {
+      } else {
         results = [...results].sort((a, b) => b.stock - a.stock);
       }
       results = results.slice(offset, offset + limit);
