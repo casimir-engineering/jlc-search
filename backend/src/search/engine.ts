@@ -368,13 +368,19 @@ export async function search(params: SearchParams): Promise<{ results: PartSumma
       })),
     ];
 
-    // True total count from FTS (Tier 0 conditions) — not capped by tier limits
-    const [countRow] = await sql`
-      SELECT COUNT(*) AS cnt FROM parts p
-      WHERE p.search_vec @@ to_tsquery('simple', ${andQ})
-      ${rangeFilter} ${colFilter} ${typeFilter} ${categoryFilter} ${economicFilter} ${stockFilter} ${negFilter}
-    `;
-    const totalCount = Math.max(Number(countRow?.cnt ?? 0), results.length);
+    // Fast total estimate using EXPLAIN (avoids slow COUNT(*) on broad queries)
+    let totalCount = results.length;
+    try {
+      const explainRows = await sql`
+        EXPLAIN (FORMAT JSON) SELECT 1 FROM parts p
+        WHERE p.search_vec @@ to_tsquery('simple', ${andQ})
+        ${rangeFilter} ${colFilter} ${typeFilter} ${categoryFilter} ${economicFilter} ${stockFilter} ${negFilter}
+      `;
+      const plan = (explainRows[0] as any)?.["QUERY PLAN"]?.[0]?.Plan;
+      if (plan?.["Plan Rows"]) {
+        totalCount = Math.max(Math.round(plan["Plan Rows"]), results.length);
+      }
+    } catch { /* fallback to results.length */ }
 
     // Deep pagination: if offset is beyond what tiers fetched, use SQL-level pagination
     if (offset >= results.length && !isRelevanceSort) {
