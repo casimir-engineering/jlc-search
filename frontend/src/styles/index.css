@@ -138,31 +138,29 @@ code { font-family: monospace; background: #eee; padding: 1px 4px; border-radius
 /* Filter bar */
 .filter-bar {
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 0.35rem;
+  gap: 0.3rem 0.5rem;
   width: 100%;
-  max-width: 780px;
+  max-width: 680px;
   padding: 0.15rem 0;
-  overflow-x: auto;
 }
 
 .filter-spacer {
   flex: 1;
-  min-width: 0.25rem;
+  min-width: 0.5rem;
 }
 
 .chip {
   font-size: 0.78rem;
-  padding: 0.25rem 0.6rem;
+  padding: 0.2rem 0.65rem;
   border-radius: 999px;
   border: 1.5px solid #d0d0d0;
   background: #fff;
   cursor: pointer;
-  color: #555;
+  color: #444;
   transition: all 0.12s;
   white-space: nowrap;
-  line-height: 1.3;
 }
 
 .chip:hover { border-color: #0066cc; color: #0066cc; }
@@ -171,31 +169,20 @@ code { font-family: monospace; background: #eee; padding: 1px 4px; border-radius
   border-color: #0066cc;
   color: #fff;
 }
-.chip-active:hover { background: #0055aa; border-color: #0055aa; }
 .chip-danger { border-color: #cc2200; color: #cc2200; }
 .chip-danger:hover { border-color: #cc2200; color: #cc2200; }
 .chip-danger-confirm { background: #cc2200; border-color: #cc2200; color: #fff; }
 .chip-danger-confirm:hover { background: #aa1c00; border-color: #aa1c00; color: #fff; }
-.chip-arrow { margin-left: 3px; font-size: 0.55em; opacity: 0.7; }
 
-/* Chip dropdown (unified style for all filter dropdowns) */
-.chip-dropdown { position: relative; display: inline-block; }
-.chip-dropdown-menu {
-  position: absolute; top: calc(100% + 4px); left: 0; z-index: 100;
-  background: #fff; border: 1.5px solid #d0d0d0; border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.1); min-width: 160px;
-  padding: 4px 0;
+.toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.82rem;
+  color: #444;
+  cursor: pointer;
+  white-space: nowrap;
 }
-.dropdown-item {
-  display: flex; align-items: center; gap: 6px;
-  width: 100%; padding: 6px 12px;
-  font-size: 0.82rem; color: #444;
-  border: none; background: none; cursor: pointer;
-  text-align: left; white-space: nowrap;
-}
-.dropdown-item:hover { background: #f5f5f5; }
-.dropdown-active { color: #0066cc; font-weight: 600; }
-.dropdown-item input[type="checkbox"] { margin: 0; }
 
 /* Main content */
 .app-main {
@@ -490,7 +477,22 @@ code { font-family: monospace; background: #eee; padding: 1px 4px; border-radius
 
 .btn-secondary:hover { border-color: #0066cc; color: #0066cc; text-decoration: none; }
 
+/* Sort select */
+.sort-select {
+  font-size: 0.82rem;
+  padding: 0.2rem 0.5rem;
+  border: 1.5px solid #d0d0d0;
+  border-radius: 6px;
+  background: #fff;
+  color: #444;
+  cursor: pointer;
+  outline: none;
+}
+.sort-select:focus { border-color: #0066cc; }
+
 /* Category multi-select dropdown */
+.category-select { position: relative; display: inline-block; }
+.chip-arrow { margin-left: 4px; font-size: 0.6em; }
 .category-dropdown {
   position: absolute; top: 100%; left: 0; z-index: 100;
   background: #fff; border: 1.5px solid #d0d0d0; border-radius: 6px;
