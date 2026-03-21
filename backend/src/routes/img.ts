@@ -9,6 +9,7 @@ const IMG_DIR = process.env.IMG_CACHE_DIR
   ?? join(import.meta.dir, "../../data/img");
 
 const LCSC_CDN = "https://assets.lcsc.com/images/lcsc/900x900/";
+const WSRV_PROXY = "https://wsrv.nl/?url=";
 
 const LCSC_HEADERS = {
   "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -90,14 +91,34 @@ async function downloadImage(lcsc: string): Promise<void> {
       cdnUrl = match[0];
     }
 
-    // Download the image
-    const imgResp = await fetch(cdnUrl, {
-      headers: { ...LCSC_HEADERS, Accept: "image/webp,image/jpeg,image/*" },
-      signal: AbortSignal.timeout(15_000),
-    });
-    if (!imgResp.ok) return;
-    const buf = await imgResp.arrayBuffer();
-    if (buf.byteLength < 500) return;
+    // Try direct CDN first, fall back to wsrv.nl proxy if blocked (403)
+    let buf: ArrayBuffer | null = null;
+    try {
+      const imgResp = await fetch(cdnUrl, {
+        headers: { ...LCSC_HEADERS, Accept: "image/webp,image/jpeg,image/*" },
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (imgResp.ok) {
+        const data = await imgResp.arrayBuffer();
+        if (data.byteLength >= 500) buf = data;
+      }
+    } catch { /* direct failed */ }
+
+    // Fallback: wsrv.nl proxy (bypasses CDN IP blocks)
+    if (!buf) {
+      try {
+        const proxyUrl = `${WSRV_PROXY}${encodeURIComponent(cdnUrl)}&w=900&h=900`;
+        const proxyResp = await fetch(proxyUrl, {
+          signal: AbortSignal.timeout(15_000),
+        });
+        if (proxyResp.ok) {
+          const data = await proxyResp.arrayBuffer();
+          if (data.byteLength >= 500) buf = data;
+        }
+      } catch { /* proxy also failed */ }
+    }
+
+    if (!buf) return;
 
     // Save to cache
     mkdirSync(IMG_DIR, { recursive: true });
