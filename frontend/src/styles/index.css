@@ -239,10 +239,19 @@ code { font-family: monospace; background: #eee; padding: 1px 4px; border-radius
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+  opacity: 1;
+  transition: opacity 0.05s;
+}
+.results-loading {
+  opacity: 0.4;
+  pointer-events: none;
+  transition: opacity 0.1s;
 }
 
 .part-card {
   background: #fff;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 200px;
   border: 1.5px solid #e8e8e8;
   border-radius: 8px;
   display: flex;

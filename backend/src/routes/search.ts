@@ -39,6 +39,7 @@ searchRouter.get("/", async (c) => {
       if ((r as any).jlc_stock === 0) refreshJlcStock((r as any).lcsc);
     }
 
+    c.header("Cache-Control", "public, max-age=30, stale-while-revalidate=60");
     return c.json<SearchResponse>({ results, total, took_ms, query: q });
   } catch (err) {
     console.error("Search route error:", err);

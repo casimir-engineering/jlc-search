@@ -144,7 +144,7 @@ export function ResultsList({ results, total, loading, error, query, tookMs, pag
       </div>
       {hasFavorites && <CartSummary parts={bomParts} quantities={quantities} onClearAll={onClearAll} />}
       <Pagination page={page} totalPages={totalPages} onPageChange={onPageChange} />
-      <div className="results-list">
+      <div className={`results-list${loading ? " results-loading" : ""}`}>
         {results.map((part) => (
           <PartCard key={part.lcsc} part={part} isFavorite={favorites.has(part.lcsc)} onToggleFavorite={onToggleFavorite} quantity={quantities[part.lcsc]} onQuantityChange={onQuantityChange} searchQuery={query} />
         ))}

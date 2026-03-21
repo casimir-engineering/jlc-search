@@ -27,7 +27,7 @@ export function useSearch() {
   const [tookMs, setTookMs] = useState<number | null>(null);
   const [page, setPage] = useState(0);
 
-  const debounceMs = query.trim().length <= 3 ? 1000 : 500;
+  const debounceMs = query.trim().length <= 2 ? 250 : 150;
   const debouncedQuery = useDebounce(query, debounceMs);
   const abortRef = useRef<AbortController | null>(null);
 

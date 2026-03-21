@@ -8,7 +8,7 @@ import type { PartSummary, SearchParams } from "../types.ts";
 const SELECT_COLS = `
   p.lcsc, p.mpn, p.manufacturer, p.description, p.package, p.joints,
   p.stock, p.jlc_stock, p.price_raw, p.img, p.url, p.part_type, p.pcba_type,
-  p.category, p.subcategory, p.datasheet, p.moq, p.attributes
+  p.category, p.subcategory, p.datasheet, p.moq
 `;
 
 function escapeIlike(s: string): string {
