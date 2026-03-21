@@ -497,17 +497,18 @@ code { font-family: monospace; background: #eee; padding: 1px 4px; border-radius
   outline: none;
   appearance: none;
   -webkit-appearance: none;
-  padding-right: 1.2rem;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 5 5-5' fill='none' stroke='%23999' stroke-width='1.5'/%3E%3C/svg%3E");
+  padding-right: 1.4rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0 0l4 4 4-4' fill='none' stroke='%23888' stroke-width='1.2'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
-  background-position: right 0.4rem center;
+  background-position: right 0.45rem center;
+  background-size: 8px 5px;
 }
 .sort-select:hover { border-color: #0066cc; color: #0066cc; }
 .sort-select:focus { border-color: #0066cc; }
 
 /* Category multi-select dropdown */
 .category-select { position: relative; display: inline-block; }
-.chip-arrow { margin-left: 4px; font-size: 0.6em; }
+.chip-arrow { margin-left: 3px; font-size: 0.55em; opacity: 0.6; }
 .category-dropdown {
   position: absolute; top: 100%; left: 0; z-index: 100;
   background: #fff; border: 1.5px solid #d0d0d0; border-radius: 6px;

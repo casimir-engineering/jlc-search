@@ -128,14 +128,6 @@ export function FilterBar({ filters, onChange, cartMode, onCartModeChange, cartI
         />
         Match all terms
       </label>
-      <label className="toggle-label">
-        <input
-          type="checkbox"
-          checked={filters.fuzzy}
-          onChange={(e) => onChange({ fuzzy: e.target.checked })}
-        />
-        Fuzzy search
-      </label>
       <select
         className="sort-select"
         value={filters.sort}
