@@ -15,11 +15,13 @@ export function DonatePage({ onBack }: { onBack: () => void }) {
         <div className="donate-card">
           <h2>WeChat Pay</h2>
           <img src="/qr1.webp" alt="WeChat Pay QR" className="donate-qr" />
+          <p className="donate-hint">On mobile: long-press to save, then scan in WeChat</p>
         </div>
 
         <div className="donate-card">
           <h2>Alipay</h2>
           <img src="/qr2.webp" alt="Alipay QR" className="donate-qr" />
+          <p className="donate-hint">On mobile: long-press to save, then scan in Alipay</p>
         </div>
       </div>
 
