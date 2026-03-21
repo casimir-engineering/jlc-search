@@ -439,6 +439,37 @@ code { font-family: monospace; background: #eee; padding: 1px 4px; border-radius
   object-fit: contain;
 }
 
+/* Mobile lightbox */
+.img-lightbox {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+.img-lightbox img {
+  max-width: 90vw;
+  max-height: 80vh;
+  background: #fff;
+  border-radius: 8px;
+  padding: 8px;
+  object-fit: contain;
+}
+.img-lightbox-close {
+  position: absolute;
+  top: 0.75rem;
+  right: 1rem;
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 2rem;
+  cursor: pointer;
+  line-height: 1;
+}
+
 
 
 .part-card-body {

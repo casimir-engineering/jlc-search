@@ -167,7 +167,10 @@ export const PartCard = memo(function PartCard({ part, isFavorite, onToggleFavor
     }
   };
 
+  const isTouchDevice = typeof window !== "undefined" && "ontouchstart" in window;
+
   const handleMouseEnter = (e: React.MouseEvent<HTMLDivElement>, src: string) => {
+    if (isTouchDevice) return; // use tap handler on touch devices
     const rect = e.currentTarget.getBoundingClientRect();
     const fitsLeft = rect.left >= POPUP_SIZE + POPUP_GAP;
     const x = fitsLeft
@@ -176,6 +179,11 @@ export const PartCard = memo(function PartCard({ part, isFavorite, onToggleFavor
     const rawY = rect.top + rect.height / 2 - POPUP_SIZE / 2;
     const y = Math.max(8, Math.min(window.innerHeight - POPUP_SIZE - 8, rawY));
     setPopupPos({ x, y, src });
+  };
+
+  const handleTap = (src: string) => {
+    if (!isTouchDevice) return;
+    setPopupPos({ x: 0, y: 0, src }); // x/y unused for modal mode
   };
 
   const jlcUrl = `https://jlcpcb.com/partdetail/${part.lcsc}`;
@@ -219,6 +227,7 @@ export const PartCard = memo(function PartCard({ part, isFavorite, onToggleFavor
             className="part-card-image"
             onMouseEnter={(e) => handleMouseEnter(e, photoSrc!)}
             onMouseLeave={() => setPopupPos(null)}
+            onClick={() => handleTap(photoSrc!)}
           >
             <img
               src={photoSrc}
@@ -233,6 +242,7 @@ export const PartCard = memo(function PartCard({ part, isFavorite, onToggleFavor
             className="part-card-image part-card-sch"
             onMouseEnter={(e) => handleMouseEnter(e, schSrc)}
             onMouseLeave={() => setPopupPos(null)}
+            onClick={() => handleTap(schSrc)}
           >
             <img
               src={schSrc}
@@ -247,6 +257,7 @@ export const PartCard = memo(function PartCard({ part, isFavorite, onToggleFavor
             className="part-card-image part-card-fp"
             onMouseEnter={(e) => handleMouseEnter(e, fpSrc)}
             onMouseLeave={() => setPopupPos(null)}
+            onClick={() => handleTap(fpSrc)}
           >
             <img
               src={fpSrc}
@@ -367,12 +378,19 @@ export const PartCard = memo(function PartCard({ part, isFavorite, onToggleFavor
       </div>
 
       {popupPos && createPortal(
-        <div
-          className="img-popup"
-          style={{ left: popupPos.x, top: popupPos.y }}
-        >
-          <img src={popupPos.src} alt={part.mpn} />
-        </div>,
+        isTouchDevice ? (
+          <div className="img-lightbox" onClick={() => setPopupPos(null)}>
+            <button className="img-lightbox-close" onClick={() => setPopupPos(null)}>&times;</button>
+            <img src={popupPos.src} alt={part.mpn} onClick={(e) => e.stopPropagation()} />
+          </div>
+        ) : (
+          <div
+            className="img-popup"
+            style={{ left: popupPos.x, top: popupPos.y }}
+          >
+            <img src={popupPos.src} alt={part.mpn} />
+          </div>
+        ),
         document.body
       )}
     </div>
