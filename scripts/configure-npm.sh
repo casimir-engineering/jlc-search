@@ -104,12 +104,9 @@ CERT_ID=$(curl -sf "$NPM_URL/api/nginx/certificates" \
   -H "Content-Type: application/json" \
   -d '{
     "domain_names": ["'"$DOMAIN"'"],
-    "meta": {
-      "letsencrypt_email": "'"$LE_EMAIL"'",
-      "letsencrypt_agree": true,
-      "dns_challenge": false
-    },
-    "provider": "letsencrypt"
+    "meta": {},
+    "provider": "letsencrypt",
+    "nice_name": "'"$DOMAIN"'"
   }' \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
 
@@ -133,7 +130,7 @@ curl -sf -X PUT "$NPM_URL/api/nginx/proxy-hosts/$HOST_ID" \
     "http2_support": true,
     "hsts_enabled": true,
     "hsts_subdomains": false,
-    "meta": {"letsencrypt_agree": true, "dns_challenge": false},
+    "meta": {},
     "advanced_config": "",
     "locations": [],
     "caching_enabled": false
