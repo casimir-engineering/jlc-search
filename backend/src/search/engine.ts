@@ -382,8 +382,14 @@ export async function search(params: SearchParams): Promise<{ results: PartSumma
       }
     } catch { /* fallback to results.length */ }
 
+    // Cap total to actual results if tiers found fewer than a full page
+    // (EXPLAIN estimate can be wildly off for prefix queries like "esp32s3:*")
+    if (results.length < TIER0_LIMIT + TIER1_LIMIT && results.length < totalCount) {
+      totalCount = results.length;
+    }
+
     // Deep pagination: if offset is beyond what tiers fetched, use SQL-level pagination
-    if (offset >= results.length && !isRelevanceSort) {
+    if (offset >= results.length && results.length >= TIER0_LIMIT) {
       const orderFrag = params.sort === "price_asc" || params.sort === "price_desc"
         ? sql`p.stock DESC` // price sort done in-app after fetch
         : params.sort === "stock_asc" ? sql`p.stock ASC`
