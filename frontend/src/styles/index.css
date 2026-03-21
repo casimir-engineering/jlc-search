@@ -34,6 +34,9 @@ code { font-family: monospace; background: #eee; padding: 1px 4px; border-radius
   white-space: nowrap;
 }
 .donate-btn:hover { background: #d97706; text-decoration: none; }
+@media (max-width: 600px) {
+  .donate-bar { flex-direction: column; gap: 0.25rem; padding: 0.4rem 1rem; }
+}
 
 /* Donate page */
 .donate-page {
