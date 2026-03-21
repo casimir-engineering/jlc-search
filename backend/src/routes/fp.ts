@@ -11,7 +11,7 @@ function esc(s: string): string {
 }
 
 const IMG_DIR = process.env.IMG_CACHE_DIR
-  ?? join(import.meta.dir, "../../../data/img");
+  ?? join(import.meta.dir, "../../data/img");
 
 const RETRY_AFTER_MS = 24 * 60 * 60 * 1000; // 24 hours
 

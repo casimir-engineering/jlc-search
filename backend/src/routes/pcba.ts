@@ -6,7 +6,7 @@ import { getSql } from "../db.ts";
 export const pcbaRouter = new Hono();
 
 const CACHE_DIR = process.env.IMG_CACHE_DIR
-  ?? join(import.meta.dir, "../../../data/img");
+  ?? join(import.meta.dir, "../../data/img");
 
 interface PcbaInfo {
   pcba_type: string;

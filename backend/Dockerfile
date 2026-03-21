@@ -7,6 +7,8 @@ RUN bun install
 COPY backend/tsconfig.json ./
 COPY backend/src/ ./src/
 
+RUN mkdir -p /app/data/img && chown -R bun:bun /app/data
+
 ENV PORT=3001
 EXPOSE 3001
 

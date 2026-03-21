@@ -6,7 +6,7 @@ import { getSql } from "../db.ts";
 export const imgRouter = new Hono();
 
 const IMG_DIR = process.env.IMG_CACHE_DIR
-  ?? join(import.meta.dir, "../../../data/img");
+  ?? join(import.meta.dir, "../../data/img");
 
 const LCSC_CDN = "https://assets.lcsc.com/images/lcsc/900x900/";
 
@@ -52,8 +52,8 @@ function markNoImg(lcsc: string): void {
   } catch { /* ignore */ }
 }
 
-/** Look up the img filename from the DB (fast path — no HTML scraping needed). */
-async function getImgFilename(lcsc: string): Promise<string | null> {
+/** Look up the img URL/filename from the DB (fast path — no HTML scraping needed). */
+async function getImgField(lcsc: string): Promise<string | null> {
   const sql = getSql();
   const rows = await sql`SELECT img FROM parts WHERE lcsc = ${lcsc}`;
   return (rows[0]?.img as string) ?? null;
@@ -66,11 +66,17 @@ async function downloadImage(lcsc: string): Promise<void> {
   let succeeded = false;
   try {
     // Try DB img field first — direct CDN URL, no HTML scraping needed
-    const imgFilename = await getImgFilename(lcsc);
+    const imgField = await getImgField(lcsc);
     let cdnUrl: string | null = null;
 
-    if (imgFilename) {
-      cdnUrl = LCSC_CDN + imgFilename;
+    if (imgField) {
+      if (imgField.startsWith("http")) {
+        // Full URL stored in DB — upgrade 96x96 thumbnails to 900x900
+        cdnUrl = imgField.replace("/96x96/", "/900x900/");
+      } else {
+        // Bare filename — prepend CDN base
+        cdnUrl = LCSC_CDN + imgField;
+      }
     } else {
       // Fall back to scraping product detail page
       const pageResp = await fetch(`https://www.lcsc.com/product-detail/${lcsc}.html`, {
