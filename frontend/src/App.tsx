@@ -208,7 +208,7 @@ export function App() {
   return (
     <div className={`app ${hasResults ? "app-results-mode" : "app-home-mode"}`}>
       <div className="donate-bar">
-        <span>Did this save you time? Help cover our Asia hosting costs.</span>
+        <span>Did this save you time? Help cover our pricey Asia hosting costs.</span>
         <a href="/donate" className="donate-btn" onClick={(e) => { e.preventDefault(); setShowDonate(true); window.history.pushState(null, "", "/donate"); }}>15 seconds donation - try without losing your search!</a>
       </div>
       {showDonate ? (
