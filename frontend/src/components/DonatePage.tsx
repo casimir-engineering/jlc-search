@@ -7,7 +7,7 @@ export function DonatePage({ onBack }: { onBack: () => void }) {
         This tool is free and open source. If it saved you time, consider helping cover our hosting costs.
       </p>
       <p className="donate-subtitle">
-        This infrastructure costs $35/month because Asian servers with reasonable bandwidth are particularly expensive.
+        This infrastructure costs <strong>$35/month</strong> because Asian servers with reasonable bandwidth are particularly expensive.
         If I get enough donations I will start a Europe server, then a US one.
       </p>
 
