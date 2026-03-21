@@ -50,7 +50,7 @@ const SI_MULTIPLIERS: Record<string, number> = {
 
 /** Unit suffixes we recognize when parsing strings like "20mA", "100nF", "50V" */
 const STRING_UNIT_SUFFIXES: [RegExp, string][] = [
-  [/Ohm$/i, "Ohm"],
+  [/(?:Ohm|Ω|Ω)$/i, "Ohm"],
   [/Hz$/, "Hz"],
   [/V$/, "V"],
   [/F$/, "F"],
@@ -170,14 +170,14 @@ export function extractNumericFromText(text: string): NumericAttr[] {
   const results: NumericAttr[] = [];
   const seen = new Set<string>();
   // Match number + optional SI prefix + unit suffix, with word boundaries
-  const re = /(?<!\w)(-?\d+\.?\d*)(G|M|k|m|u|μ|n|p)?(V|Ohm|Hz|F|A|H|W)(?!\w)/g;
+  const re = /(?<!\w)(-?\d+\.?\d*)(G|M|k|m|u|μ|n|p)?(V|Ohm|Ω|Ω|Hz|F|A|H|W)(?!\w)/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text)) !== null) {
     const num = parseFloat(m[1]);
     if (!isFinite(num)) continue;
     const mult = m[2] ? (SI_MULTIPLIERS[m[2]] ?? 1) : 1;
     const value = num * mult;
-    const unit = m[3];
+    const unit = (m[3] === "Ω" || m[3] === "Ω") ? "Ohm" : m[3];
     const k = `${unit}:${value}`;
     if (!seen.has(k)) { results.push({ unit, value }); seen.add(k); }
   }
