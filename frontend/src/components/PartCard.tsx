@@ -1,4 +1,4 @@
-import { useState, memo, useMemo } from "react";
+import { useState, memo, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import type { PartSummary } from "../types.ts";
 import { PriceTable } from "./PriceTable.tsx";
@@ -167,10 +167,10 @@ export const PartCard = memo(function PartCard({ part, isFavorite, onToggleFavor
     }
   };
 
-  const isTouchDevice = typeof window !== "undefined" && "ontouchstart" in window;
+  const isTouchRef = useRef(false);
 
   const handleMouseEnter = (e: React.MouseEvent<HTMLDivElement>, src: string) => {
-    if (isTouchDevice) return; // use tap handler on touch devices
+    if (isTouchRef.current) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const fitsLeft = rect.left >= POPUP_SIZE + POPUP_GAP;
     const x = fitsLeft
@@ -181,10 +181,19 @@ export const PartCard = memo(function PartCard({ part, isFavorite, onToggleFavor
     setPopupPos({ x, y, src });
   };
 
-  const handleTap = (src: string) => {
-    if (!isTouchDevice) return;
-    setPopupPos({ x: 0, y: 0, src }); // x/y unused for modal mode
+  const handleMouseLeave = () => {
+    if (isTouchRef.current) return;
+    setPopupPos(null);
   };
+
+  const handleImageClick = (src: string) => {
+    // On touch, open lightbox. On desktop, click does nothing (hover handles it).
+    if (isTouchRef.current) {
+      setPopupPos({ x: 0, y: 0, src });
+    }
+  };
+
+  const handleTouchStart = () => { isTouchRef.current = true; };
 
   const jlcUrl = `https://jlcpcb.com/partdetail/${part.lcsc}`;
   const lcscUrl = `https://www.lcsc.com/search?q=${encodeURIComponent(part.lcsc)}`;
@@ -225,9 +234,10 @@ export const PartCard = memo(function PartCard({ part, isFavorite, onToggleFavor
         {photoSrc && !photoFailed && (
           <div
             className="part-card-image"
+            onTouchStart={handleTouchStart}
             onMouseEnter={(e) => handleMouseEnter(e, photoSrc!)}
-            onMouseLeave={() => setPopupPos(null)}
-            onClick={() => handleTap(photoSrc!)}
+            onMouseLeave={handleMouseLeave}
+            onClick={() => handleImageClick(photoSrc!)}
           >
             <img
               src={photoSrc}
@@ -240,9 +250,10 @@ export const PartCard = memo(function PartCard({ part, isFavorite, onToggleFavor
         {schSrc && !schFailed && (
           <div
             className="part-card-image part-card-sch"
+            onTouchStart={handleTouchStart}
             onMouseEnter={(e) => handleMouseEnter(e, schSrc)}
-            onMouseLeave={() => setPopupPos(null)}
-            onClick={() => handleTap(schSrc)}
+            onMouseLeave={handleMouseLeave}
+            onClick={() => handleImageClick(schSrc)}
           >
             <img
               src={schSrc}
@@ -255,9 +266,10 @@ export const PartCard = memo(function PartCard({ part, isFavorite, onToggleFavor
         {fpSrc && !fpFailed && (
           <div
             className="part-card-image part-card-fp"
+            onTouchStart={handleTouchStart}
             onMouseEnter={(e) => handleMouseEnter(e, fpSrc)}
-            onMouseLeave={() => setPopupPos(null)}
-            onClick={() => handleTap(fpSrc)}
+            onMouseLeave={handleMouseLeave}
+            onClick={() => handleImageClick(fpSrc)}
           >
             <img
               src={fpSrc}
@@ -378,7 +390,7 @@ export const PartCard = memo(function PartCard({ part, isFavorite, onToggleFavor
       </div>
 
       {popupPos && createPortal(
-        isTouchDevice ? (
+        isTouchRef.current ? (
           <div className="img-lightbox" onClick={() => setPopupPos(null)}>
             <button className="img-lightbox-close" onClick={() => setPopupPos(null)}>&times;</button>
             <img src={popupPos.src} alt={part.mpn} onClick={(e) => e.stopPropagation()} />
