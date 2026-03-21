@@ -11,6 +11,30 @@ a { color: #0066cc; text-decoration: none; }
 a:hover { text-decoration: underline; }
 code { font-family: monospace; background: #eee; padding: 1px 4px; border-radius: 3px; font-size: 0.9em; }
 
+/* Donate bar */
+.donate-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 0.3rem 1rem;
+  background: #fffbeb;
+  border-bottom: 1px solid #f0e6c0;
+  font-size: 0.75rem;
+  color: #92700c;
+}
+.donate-btn {
+  padding: 0.15rem 0.6rem;
+  background: #f59e0b;
+  color: #fff;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.donate-btn:hover { background: #d97706; text-decoration: none; }
+
 /* App layout */
 .app {
   display: flex;

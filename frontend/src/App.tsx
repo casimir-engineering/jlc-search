@@ -204,6 +204,10 @@ export function App() {
 
   return (
     <div className={`app ${hasResults ? "app-results-mode" : "app-home-mode"}`}>
+      <div className="donate-bar">
+        <span>Did this save you time? Help cover our Asia hosting costs.</span>
+        <a href="/donate" className="donate-btn">15s donation</a>
+      </div>
       <header className="app-header">
         <div className="app-logo">
           <span className="logo-text">jlc-search</span>
