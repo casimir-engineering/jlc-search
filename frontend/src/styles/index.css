@@ -410,6 +410,7 @@ code { font-family: monospace; background: #eee; padding: 1px 4px; border-radius
 .badge-mechanical { background: #f8d7da; color: #721c24; }
 .badge-pcba { background: #f0f0f0; color: #555; }
 .badge-package { background: #fafafa; color: #777; border: 1px solid #e0e0e0; font-weight: 400; text-transform: none; letter-spacing: 0; }
+.badge-match { background: #fff8e1; color: #b8860b; border: 1px solid #f0d060; font-weight: 600; text-transform: none; letter-spacing: 0; }
 
 .part-category {
   font-size: 0.75rem;

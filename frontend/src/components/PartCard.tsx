@@ -87,8 +87,33 @@ export const PartCard = memo(function PartCard({ part, isFavorite, onToggleFavor
   // Parse search tokens for highlighting
   const searchTokens = useMemo(() => {
     if (!searchQuery) return [];
-    return searchQuery.split(/\s+/).filter(t => t.length >= 2 && !t.startsWith("-"));
+    return searchQuery.split(/\s+/).filter(t => t.length >= 2 && !t.startsWith("-") && !t.includes(":"));
   }, [searchQuery]);
+
+  // Extract matched range filter values from description
+  const matchedValues = useMemo(() => {
+    if (!searchQuery || !part.description) return [];
+    const rangeRe = /(\w+):([<>]?\d+\.?\d*(?:->?\d+\.?\d*)?)/g;
+    const matches: string[] = [];
+    let m: RegExpExecArray | null;
+    while ((m = rangeRe.exec(searchQuery)) !== null) {
+      const unit = m[1].toLowerCase();
+      // Map unit aliases to symbols for display matching
+      const symbols: Record<string, string[]> = {
+        ohm: ["Ω", "Ohm", "ohm"], v: ["V"], f: ["F"], a: ["A"], w: ["W"], hz: ["Hz"], h: ["H"],
+      };
+      const syms = symbols[unit] || [unit];
+      // Find the actual value in description (e.g., "22Ω", "100nF", "3.3V")
+      const siRe = new RegExp(`(\\d+\\.?\\d*)(G|M|k|m|u|μ|n|p)?(?:${syms.map(s => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})(?!\\w)`, "g");
+      let dm: RegExpExecArray | null;
+      while ((dm = siRe.exec(part.description)) !== null) {
+        const sym = syms[0] === "Ω" ? "Ω" : syms[0];
+        matches.push(`${dm[1]}${dm[2] || ""}${sym}`);
+        break; // first match per filter
+      }
+    }
+    return matches;
+  }, [searchQuery, part.description]);
 
   // Parse attributes for display
   const attrEntries = useMemo(() => {
@@ -260,6 +285,9 @@ export const PartCard = memo(function PartCard({ part, isFavorite, onToggleFavor
             </span>
           )}
           {part.package && <span className="badge badge-package">{translatePackage(part.package)}</span>}
+          {matchedValues.map((val, i) => (
+            <span key={i} className="badge badge-match">{val}</span>
+          ))}
         </div>
 
         <div className="part-category">{part.category} › {part.subcategory}</div>
