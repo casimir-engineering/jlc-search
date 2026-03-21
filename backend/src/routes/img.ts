@@ -63,8 +63,44 @@ async function getImgField(lcsc: string): Promise<string | null> {
 const JLCPCB_API = "https://jlcpcb.com/api/overseas-pcb-order/v1/shoppingCart/smtGood/selectSmtComponentList";
 const JLCPCB_FILE_API = "https://jlcpcb.com/api/file/downloadByFileSystemAccessId/";
 
-/** Try JLCPCB accessId API — covers ~80% of parts, no auth needed. */
-async function tryJlcpcbAccessId(lcsc: string): Promise<ArrayBuffer | null> {
+/**
+ * Source health tracker — remembers which sources are working.
+ * If a source fails repeatedly, it's deprioritized (tried last).
+ * Resets every 10 minutes to re-check blocked sources.
+ */
+const sourceHealth = {
+  jlcpcb:   { fails: 0, lastFail: 0 },
+  lcscCdn:  { fails: 0, lastFail: 0 },
+  wsrvProxy: { fails: 0, lastFail: 0 },
+};
+const HEALTH_RESET_MS = 10 * 60 * 1000; // re-check failed sources every 10min
+const FAIL_THRESHOLD = 3; // deprioritize after 3 consecutive fails
+
+function isSourceHealthy(name: keyof typeof sourceHealth): boolean {
+  const s = sourceHealth[name];
+  if (s.fails < FAIL_THRESHOLD) return true;
+  // Reset after cooldown to re-check
+  if (Date.now() - s.lastFail > HEALTH_RESET_MS) { s.fails = 0; return true; }
+  return false;
+}
+
+function markSourceOk(name: keyof typeof sourceHealth): void {
+  sourceHealth[name].fails = 0;
+}
+
+function markSourceFail(name: keyof typeof sourceHealth): void {
+  const s = sourceHealth[name];
+  s.fails++;
+  s.lastFail = Date.now();
+}
+
+/** Request counter for round-robin rotation among healthy sources. */
+let requestCounter = 0;
+
+type ImageFetcher = (lcsc: string, cdnUrl: string | null) => Promise<ArrayBuffer | null>;
+
+/** JLCPCB accessId — ~80% coverage, no IP block. */
+const fetchJlcpcb: ImageFetcher = async (lcsc) => {
   try {
     const resp = await fetch(JLCPCB_API, {
       method: "POST",
@@ -72,67 +108,87 @@ async function tryJlcpcbAccessId(lcsc: string): Promise<ArrayBuffer | null> {
       body: JSON.stringify({ keyword: lcsc, pageSize: 1, currentPage: 1 }),
       signal: AbortSignal.timeout(8_000),
     });
-    if (!resp.ok) return null;
+    if (!resp.ok) { markSourceFail("jlcpcb"); return null; }
     const data = await resp.json() as any;
     const part = data?.data?.componentPageInfo?.list?.[0];
     const accessId = part?.productBigImageAccessId || part?.minImageAccessId;
-    if (!accessId) return null;
+    if (!accessId) return null; // no image for this part, not a source failure
 
     const imgResp = await fetch(`${JLCPCB_FILE_API}${accessId}`, {
       signal: AbortSignal.timeout(10_000),
     });
-    if (!imgResp.ok) return null;
+    if (!imgResp.ok) { markSourceFail("jlcpcb"); return null; }
     const buf = await imgResp.arrayBuffer();
-    return buf.byteLength >= 500 ? buf : null;
-  } catch { return null; }
-}
+    if (buf.byteLength < 500) return null;
+    markSourceOk("jlcpcb");
+    return buf;
+  } catch { markSourceFail("jlcpcb"); return null; }
+};
 
-/** Fetch image in background and cache to disk. Tries: JLCPCB accessId → direct CDN → wsrv.nl proxy. */
+/** Direct LCSC CDN. */
+const fetchLcscCdn: ImageFetcher = async (_lcsc, cdnUrl) => {
+  if (!cdnUrl) return null;
+  try {
+    const resp = await fetch(cdnUrl, {
+      headers: { ...LCSC_HEADERS, Accept: "image/webp,image/jpeg,image/*" },
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (!resp.ok) { markSourceFail("lcscCdn"); return null; }
+    const buf = await resp.arrayBuffer();
+    if (buf.byteLength < 500) { markSourceFail("lcscCdn"); return null; }
+    markSourceOk("lcscCdn");
+    return buf;
+  } catch { markSourceFail("lcscCdn"); return null; }
+};
+
+/** wsrv.nl proxy — bypasses IP blocks. */
+const fetchWsrvProxy: ImageFetcher = async (_lcsc, cdnUrl) => {
+  if (!cdnUrl) return null;
+  try {
+    const proxyUrl = `${WSRV_PROXY}${encodeURIComponent(cdnUrl)}&w=900&h=900`;
+    const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(15_000) });
+    if (!resp.ok) { markSourceFail("wsrvProxy"); return null; }
+    const buf = await resp.arrayBuffer();
+    if (buf.byteLength < 500) { markSourceFail("wsrvProxy"); return null; }
+    markSourceOk("wsrvProxy");
+    return buf;
+  } catch { markSourceFail("wsrvProxy"); return null; }
+};
+
+/** Fetch image — rotates among healthy sources, tries all on failure. */
 async function downloadImage(lcsc: string): Promise<void> {
   if (downloading.has(lcsc)) return;
   downloading.add(lcsc);
   let succeeded = false;
   try {
+    // Build CDN URL from DB
+    const imgField = await getImgField(lcsc);
+    let cdnUrl: string | null = null;
+    if (imgField) {
+      cdnUrl = imgField.startsWith("http")
+        ? imgField.replace("/96x96/", "/900x900/")
+        : LCSC_CDN + imgField;
+    }
+
+    // All sources with their health status
+    const sources: { name: keyof typeof sourceHealth; fn: ImageFetcher }[] = [
+      { name: "jlcpcb", fn: fetchJlcpcb },
+      { name: "lcscCdn", fn: fetchLcscCdn },
+      { name: "wsrvProxy", fn: fetchWsrvProxy },
+    ];
+
+    // Separate healthy from unhealthy, rotate start among healthy ones
+    const healthy = sources.filter((s) => isSourceHealthy(s.name));
+    const unhealthy = sources.filter((s) => !isSourceHealthy(s.name));
+
+    // Round-robin: rotate which healthy source goes first
+    const idx = requestCounter++ % Math.max(healthy.length, 1);
+    const ordered = [...healthy.slice(idx), ...healthy.slice(0, idx), ...unhealthy];
+
     let buf: ArrayBuffer | null = null;
-
-    // Tier 1: JLCPCB accessId API (fastest, no IP block issues)
-    buf = await tryJlcpcbAccessId(lcsc);
-
-    // Tier 2: Direct LCSC CDN (works if not IP-blocked)
-    if (!buf) {
-      const imgField = await getImgField(lcsc);
-      let cdnUrl: string | null = null;
-      if (imgField) {
-        cdnUrl = imgField.startsWith("http")
-          ? imgField.replace("/96x96/", "/900x900/")
-          : LCSC_CDN + imgField;
-      }
-      if (cdnUrl) {
-        try {
-          const imgResp = await fetch(cdnUrl, {
-            headers: { ...LCSC_HEADERS, Accept: "image/webp,image/jpeg,image/*" },
-            signal: AbortSignal.timeout(8_000),
-          });
-          if (imgResp.ok) {
-            const data = await imgResp.arrayBuffer();
-            if (data.byteLength >= 500) buf = data;
-          }
-        } catch { /* direct failed */ }
-
-        // Tier 3: wsrv.nl proxy (bypasses CDN IP blocks)
-        if (!buf) {
-          try {
-            const proxyUrl = `${WSRV_PROXY}${encodeURIComponent(cdnUrl)}&w=900&h=900`;
-            const proxyResp = await fetch(proxyUrl, {
-              signal: AbortSignal.timeout(15_000),
-            });
-            if (proxyResp.ok) {
-              const data = await proxyResp.arrayBuffer();
-              if (data.byteLength >= 500) buf = data;
-            }
-          } catch { /* proxy also failed */ }
-        }
-      }
+    for (const source of ordered) {
+      buf = await source.fn(lcsc, cdnUrl);
+      if (buf) break;
     }
 
     if (!buf) return;
