@@ -109,6 +109,7 @@ export function parseComponent(
     datasheet: typeof comp.datasheet === "string" && comp.datasheet ? comp.datasheet : null,
     package: translateChinese(pkg ?? "") || null,
     joints: comp.joints != null ? Number(comp.joints) : null,
+    moq: comp.moq != null ? Number(comp.moq) : null,
     stock: 0,
     jlc_stock: 0,
     price_raw: normalizePriceToString(comp.price),
