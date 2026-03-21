@@ -19,6 +19,49 @@ interface Props {
   cartTotal: number;
 }
 
+/** Generic chip-style dropdown: button with ▼ arrow, click to open a list of options. */
+function ChipSelect<T extends string>({ value, options, onChange, active }: {
+  value: T;
+  options: { value: T; label: string }[];
+  onChange: (v: T) => void;
+  active?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const current = options.find((o) => o.value === value);
+
+  return (
+    <div className="category-select" ref={ref}>
+      <button className={`chip ${active ? "chip-active" : ""}`} onClick={() => setOpen(!open)}>
+        {current?.label ?? value}
+        <span className="chip-arrow">{open ? "\u25B2" : "\u25BC"}</span>
+      </button>
+      {open && (
+        <div className="chip-select-dropdown">
+          {options.map((o) => (
+            <button
+              key={o.value}
+              className={`chip-select-option ${o.value === value ? "chip-select-active" : ""}`}
+              onClick={() => { onChange(o.value); setOpen(false); }}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CategorySelect({ selected, onChange }: { selected: string[]; onChange: (cats: string[]) => void }) {
   const [categories, setCategories] = useState<{ name: string; count: number }[]>([]);
   const [open, setOpen] = useState(false);
@@ -110,16 +153,17 @@ export function FilterBar({ filters, onChange, cartMode, onCartModeChange, cartI
         selected={filters.categories}
         onChange={(categories) => onChange({ categories })}
       />
-      <select
-        className="sort-select"
+      <ChipSelect
         value={filters.stockFilter}
-        onChange={(e) => onChange({ stockFilter: e.target.value as StockFilter })}
-      >
-        <option value="none">Any stock level</option>
-        <option value="any">In stock (any)</option>
-        <option value="lcsc">LCSC stock</option>
-        <option value="jlc">JLC stock</option>
-      </select>
+        active={filters.stockFilter !== "none"}
+        options={[
+          { value: "none" as StockFilter, label: "Any stock" },
+          { value: "any" as StockFilter, label: "In stock" },
+          { value: "lcsc" as StockFilter, label: "LCSC stock" },
+          { value: "jlc" as StockFilter, label: "JLC stock" },
+        ]}
+        onChange={(v) => onChange({ stockFilter: v })}
+      />
       <label className="toggle-label">
         <input
           type="checkbox"
@@ -128,17 +172,12 @@ export function FilterBar({ filters, onChange, cartMode, onCartModeChange, cartI
         />
         Match all terms
       </label>
-      <select
-        className="sort-select"
+      <ChipSelect
         value={filters.sort}
-        onChange={(e) => onChange({ sort: e.target.value as SortOption })}
-      >
-        {SORT_OPTIONS.map((opt) => (
-          <option key={opt.value} value={opt.value}>
-            {opt.label}
-          </option>
-        ))}
-      </select>
+        active={filters.sort !== "relevance"}
+        options={SORT_OPTIONS}
+        onChange={(v) => onChange({ sort: v })}
+      />
       <div className="filter-spacer" />
       <button
         className={`chip ${cartMode ? "chip-active" : ""}`}
