@@ -35,6 +35,61 @@ code { font-family: monospace; background: #eee; padding: 1px 4px; border-radius
 }
 .donate-btn:hover { background: #d97706; text-decoration: none; }
 
+/* Donate page */
+.donate-page {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
+  text-align: center;
+}
+.donate-back {
+  display: inline-block;
+  margin-bottom: 1.5rem;
+  padding: 0.3rem 0.8rem;
+  background: none;
+  border: 1.5px solid #d0d0d0;
+  border-radius: 999px;
+  color: #555;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.donate-back:hover { border-color: #0066cc; color: #0066cc; }
+.donate-page h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+.donate-subtitle { color: #666; font-size: 0.92rem; margin-bottom: 2rem; line-height: 1.5; }
+.donate-grid {
+  display: flex;
+  gap: 1.5rem;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-bottom: 2rem;
+}
+.donate-card {
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 12px;
+  padding: 1.25rem;
+  min-width: 220px;
+  max-width: 280px;
+}
+.donate-card h2 { font-size: 1rem; margin-bottom: 0.75rem; color: #333; }
+.donate-qr {
+  width: 100%;
+  max-width: 240px;
+  border-radius: 8px;
+}
+.donate-other { margin-top: 1rem; color: #888; font-size: 0.85rem; }
+.donate-other p { margin-bottom: 0.75rem; }
+.donate-links { display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; }
+.donate-link-btn {
+  padding: 0.4rem 1rem;
+  border: 1.5px solid #d0d0d0;
+  border-radius: 999px;
+  color: #555;
+  font-size: 0.82rem;
+  text-decoration: none;
+}
+.donate-link-btn:hover { border-color: #0066cc; color: #0066cc; text-decoration: none; }
+
 /* App layout */
 .app {
   display: flex;

@@ -10,10 +10,13 @@ import { SearchBar } from "./components/SearchBar.tsx";
 import { FilterBar } from "./components/FilterBar.tsx";
 import { ResultsList } from "./components/ResultsList.tsx";
 import { StatusBar } from "./components/StatusBar.tsx";
+import { DonatePage } from "./components/DonatePage.tsx";
 import type { Filters, PartSummary } from "./types.ts";
 import { DEFAULT_FILTERS } from "./hooks/usePersistedFilters.ts";
 
 export function App() {
+  const [showDonate, setShowDonate] = useState(() => window.location.pathname === "/donate");
+
   const {
     query, setQuery, filters, setFilters,
     results, setResults, total, loading, error, tookMs,
@@ -206,8 +209,11 @@ export function App() {
     <div className={`app ${hasResults ? "app-results-mode" : "app-home-mode"}`}>
       <div className="donate-bar">
         <span>Did this save you time? Help cover our Asia hosting costs.</span>
-        <a href="/donate" className="donate-btn">15s donation</a>
+        <a href="/donate" className="donate-btn" onClick={(e) => { e.preventDefault(); setShowDonate(true); window.history.pushState(null, "", "/donate"); }}>15s donation</a>
       </div>
+      {showDonate ? (
+        <DonatePage onBack={() => { setShowDonate(false); window.history.pushState(null, "", query ? `/?q=${encodeURIComponent(query)}` : "/"); }} />
+      ) : (<>
       <header className="app-header">
         <div className="app-logo">
           <span className="logo-text">jlc-search</span>
@@ -251,6 +257,7 @@ export function App() {
       <footer className="app-footer">
         <StatusBar />
       </footer>
+      </>)}
     </div>
   );
 }
