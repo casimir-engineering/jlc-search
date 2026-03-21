@@ -91,6 +91,9 @@ export function ResultsList({ results, total, loading, error, query, tookMs, pag
           <li>Exclude terms — <code>PADAUK -OTP</code></li>
           <li>Exact phrase — <code>"Thick Film"</code></li>
         </ul>
+        <p style={{marginTop: '1rem', fontSize: '0.85rem'}}>
+          <a href="https://github.com/casimir-engineering/jlc-search" target="_blank" rel="noopener noreferrer">Star on GitHub</a>
+        </p>
       </div>
     );
   }
