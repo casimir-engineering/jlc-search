@@ -320,8 +320,8 @@ export async function search(params: SearchParams): Promise<{ results: PartSumma
         }
       }
 
-      // Tier 1b: MPN + full_text substring — broader, fills remaining slots
-      if (tier1aRows.length + tier1bRows.length < TIER1_LIMIT) {
+      // Tier 1b: MPN + full_text substring — skip if Tier 0 already saturated (saves 30-180ms)
+      if (tier0Rows.length < TIER0_LIMIT && tier1aRows.length + tier1bRows.length < TIER1_LIMIT) {
         const allExclude = [...seen];
         const allExcludeFilter = allExclude.length > 0
           ? sql`AND p.lcsc != ALL(${allExclude})`
