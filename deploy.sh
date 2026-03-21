@@ -4,8 +4,6 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-DOMAIN="jlcsearch.casimir.engineering"
-
 echo "=== jlc-search deployment ==="
 
 # Check prerequisites
@@ -13,12 +11,13 @@ command -v docker >/dev/null 2>&1 || { echo "ERROR: docker not found"; exit 1; }
 docker compose version >/dev/null 2>&1 || { echo "ERROR: docker compose not found"; exit 1; }
 
 if [ ! -f .env ]; then
-    echo "ERROR: .env file not found. Copy .env.example and configure it."
+    echo "ERROR: .env file not found. Run ./setup.sh first, or: cp .env.example .env"
     exit 1
 fi
 
 # Validate .env has production values
 set -a && source .env && set +a
+DOMAIN="${DOMAIN:-localhost}"
 if [[ "${ALLOWED_ORIGINS:-}" != *"$DOMAIN"* ]]; then
     echo "WARNING: ALLOWED_ORIGINS does not contain $DOMAIN"
     echo "  Current: ${ALLOWED_ORIGINS:-<not set>}"
@@ -63,7 +62,7 @@ for i in $(seq 1 30); do
     sleep 2
 done
 
-cat <<'EOF'
+cat <<DEPLOY_EOF
 
 === DEPLOYMENT COMPLETE ===
 
@@ -71,22 +70,21 @@ Next steps:
 
 1. Access NPM admin UI:
    - If local:  http://localhost:81
-   - If remote: ssh -L 81:localhost:81 user@server → http://localhost:81
-   Default login: admin@example.com / changeme (CHANGE IMMEDIATELY)
+   - If remote: ssh -L 81:localhost:81 user@server -> http://localhost:81
 
 2. Run the auto-configuration script to set up the proxy host + SSL:
    make configure-npm
 
    Or manually in NPM admin UI:
    - Add Proxy Host:
-     Domain: jlcsearch.casimir.engineering
-     Forward: http → 127.0.0.1 → port 8080
+     Domain: $DOMAIN
+     Forward: http -> 127.0.0.1 -> port 8080
      Enable "Block Common Exploits"
    - SSL tab:
      Request new Let's Encrypt certificate
      Check: Force SSL, HTTP/2 Support, HSTS Enabled
      Enter email for Let's Encrypt
 
-3. Verify: https://jlcsearch.casimir.engineering
+3. Verify: https://$DOMAIN
 
-EOF
+DEPLOY_EOF
