@@ -12,12 +12,13 @@ function sanitize(tok: string): string {
 
 /**
  * Should this token use prefix matching (:*)?
- * Always yes — users expect partial words to match (e.g. "pada" → "padauk").
- * The GIN index handles prefix scans efficiently, and common words like "led"
- * already match ~80k rows with exact match so prefix adds marginal cost.
+ * Yes for tokens >= 3 chars. Short tokens (1-2 chars) like "c", "n", "dc"
+ * expand to enormous GIN posting lists with :* (e.g. "c:*" matches every
+ * part with a 'C' in its tsvector). Exact match for short tokens is both
+ * faster and usually what the user means.
  */
-function needsPrefix(_tok: string): boolean {
-  return true;
+function needsPrefix(tok: string): boolean {
+  return tok.length >= 3;
 }
 
 /**
