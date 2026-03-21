@@ -540,11 +540,13 @@ fpRouter.get("/:lcsc", (c) => {
   const cachePath = svgCachePath(lcsc);
 
   if (existsSync(cachePath)) {
-    const svg = Bun.file(cachePath);
+    const svg = readFileSync(cachePath);
     return new Response(svg, {
+      status: 200,
       headers: {
         "Content-Type": "image/svg+xml",
         "Cache-Control": "public, max-age=2592000",
+        "Content-Length": String(svg.byteLength),
       },
     });
   }

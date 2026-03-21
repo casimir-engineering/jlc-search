@@ -118,11 +118,13 @@ imgRouter.get("/:lcsc", (c) => {
   const cachePath = imgCachePath(lcsc);
 
   if (existsSync(cachePath)) {
-    const file = Bun.file(cachePath);
+    const file = readFileSync(cachePath);
     return new Response(file, {
+      status: 200,
       headers: {
         "Content-Type": "image/jpeg",
-        "Cache-Control": "public, max-age=2592000", // 30 days
+        "Cache-Control": "public, max-age=2592000",
+        "Content-Length": String(file.byteLength),
       },
     });
   }

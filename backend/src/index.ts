@@ -23,7 +23,8 @@ app.use("*", async (c, next) => {
   c.header("X-Content-Type-Options", "nosniff");
   c.header("X-Frame-Options", "DENY");
   c.header("Referrer-Policy", "strict-origin-when-cross-origin");
-  c.header("Content-Security-Policy", "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'");
+  // CSP: allow images and styles for API responses (SVGs, images)
+  c.header("Content-Security-Policy", "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; connect-src 'self'");
 });
 
 // --- Simple IP rate limiter: 200 searches/min per IP ---
