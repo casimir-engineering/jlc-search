@@ -25,6 +25,15 @@ export function DonatePage({ onBack }: { onBack: () => void }) {
         </div>
       </div>
 
+      <div className="donate-grid" style={{marginTop: 0}}>
+        <div className="donate-card">
+          <h2>TWINT</h2>
+          <a href="https://go.twint.ch/1/e/tw?tw=acq.HwnUnrreRqKvD773YWUjvouGM3O_hZEzTD646yMv34QQY7t4_YC-h20zAzQRYGQV." target="_blank" rel="noopener noreferrer" className="twint-btn">
+            <img src="https://go.twint.ch/static/img/button_dark_en.svg" alt="Pay with TWINT" style={{height: '58px', width: 'auto'}} />
+          </a>
+        </div>
+      </div>
+
       <div className="donate-other">
         <p>Other ways to support:</p>
         <div className="donate-links">
