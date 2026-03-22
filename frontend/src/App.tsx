@@ -17,6 +17,15 @@ import { DEFAULT_FILTERS } from "./hooks/usePersistedFilters.ts";
 export function App() {
   const [showDonate, setShowDonate] = useState(() => window.location.pathname === "/donate");
 
+  // Restore donate page state on browser back/forward
+  useEffect(() => {
+    function handlePopState() {
+      setShowDonate(window.location.pathname === "/donate");
+    }
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
   const {
     query, setQuery, filters, setFilters,
     results, setResults, total, loading, error, tookMs,

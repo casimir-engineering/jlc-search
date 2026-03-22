@@ -37,10 +37,35 @@ export function useSearch() {
   // Sync query to URL
   useEffect(() => {
     const url = new URL(window.location.href);
-    if (query) url.searchParams.set("q", query);
-    else url.searchParams.delete("q");
-    window.history.replaceState(null, "", url.toString());
+    const currentQ = url.searchParams.get("q") ?? "";
+
+    if (query) {
+      url.searchParams.set("q", query);
+    } else {
+      url.searchParams.delete("q");
+    }
+
+    const newUrl = url.toString();
+    if (newUrl === window.location.href) return;
+
+    if (query && query !== currentQ) {
+      window.history.pushState(null, "", newUrl);
+    } else {
+      window.history.replaceState(null, "", newUrl);
+    }
   }, [query]);
+
+  // Restore query from URL on browser back/forward
+  useEffect(() => {
+    function handlePopState() {
+      const params = new URLSearchParams(window.location.search);
+      const q = params.get("q") ?? "";
+      setQuery(q);
+      setPage(0);
+    }
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
 
   // Perform search with minimal debounce
   useEffect(() => {
