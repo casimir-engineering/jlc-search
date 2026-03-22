@@ -61,6 +61,19 @@ services:
       - frontend
     restart: unless-stopped
 
+  mcp-server:
+    build:
+      context: .
+      dockerfile: mcp-server/Dockerfile
+    network_mode: host
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env}
+      MCP_PORT: "3002"
+      BACKEND_URL: "http://localhost:3001"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
   ingest:
     build:
       context: .
