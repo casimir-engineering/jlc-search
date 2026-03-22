@@ -1,0 +1,18 @@
+{
+  "name": "jlc-search-mcp-server",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "bun --watch src/index.ts",
+    "start": "bun src/index.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.0",
+    "hono": "^4.6.0",
+    "postgres": "^3.4.5",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}
