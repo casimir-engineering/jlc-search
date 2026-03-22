@@ -320,10 +320,16 @@ export async function handleKeyPage(c: Context): Promise<Response> {
     </select>
 
     <div id="guide-claude-desktop" class="guide-content active">
-      <p>Add to your Claude Desktop config file (<code>~/.claude/claude_desktop_config.json</code> on macOS/Linux, or <code>%APPDATA%\\Claude\\claude_desktop_config.json</code> on Windows):</p>
+      <p>Add to your Claude Desktop config file:</p>
+      <ul style="font-size:0.85em;color:#aaa;margin:4px 0 12px 18px">
+        <li><b>macOS</b>: <code>~/Library/Application Support/Claude/claude_desktop_config.json</code></li>
+        <li><b>Windows</b>: <code>%APPDATA%\\Claude\\claude_desktop_config.json</code></li>
+        <li><b>Linux</b>: <code>~/.config/Claude/claude_desktop_config.json</code></li>
+      </ul>
       <pre class="config-block"><code>{
   "mcpServers": {
     "jlc-search": {
+      "type": "http",
       "url": "${MCP_URL}",
       "headers": {
         "Authorization": "Bearer ${escHtml(apiKey)}"
@@ -334,10 +340,11 @@ export async function handleKeyPage(c: Context): Promise<Response> {
     </div>
 
     <div id="guide-claude-code" class="guide-content">
-      <p>Add to <code>.claude/settings.json</code> in your project or home directory:</p>
+      <p>Add to <code>.mcp.json</code> in your project root (shared) or to <code>~/.claude.json</code> (personal, all projects):</p>
       <pre class="config-block"><code>{
   "mcpServers": {
     "jlc-search": {
+      "type": "http",
       "url": "${MCP_URL}",
       "headers": {
         "Authorization": "Bearer ${escHtml(apiKey)}"
@@ -346,15 +353,19 @@ export async function handleKeyPage(c: Context): Promise<Response> {
   }
 }</code></pre>
       <p>Or run:</p>
-      <pre class="config-block"><code>claude mcp add --transport http --header "Authorization: Bearer ${escHtml(apiKey)}" jlc-search ${MCP_URL}</code></pre>
+      <pre class="config-block"><code>claude mcp add --transport http jlc-search ${MCP_URL} --header "Authorization: Bearer ${escHtml(apiKey)}"</code></pre>
     </div>
 
     <div id="guide-codex-cli" class="guide-content">
-      <p>Give Codex this prompt:</p>
-      <pre class="config-block"><code>I have access to a JLCsearch MCP server for electronic component search.
-URL: ${MCP_URL}
-Authorization: Bearer ${escHtml(apiKey)}
-Use tools: search_parts, get_part, list_categories, compare_parts</code></pre>
+      <p>1. Set your API key as an environment variable:</p>
+      <pre class="config-block"><code>export JLCSEARCH_API_KEY="${escHtml(apiKey)}"</code></pre>
+      <p>2. Add to <code>~/.codex/config.toml</code> (or project <code>.codex/config.toml</code>):</p>
+      <pre class="config-block"><code>[mcp_servers.jlc-search]
+url = "${MCP_URL}"
+bearer_token_env_var = "JLCSEARCH_API_KEY"</code></pre>
+      <p>Or add via CLI:</p>
+      <pre class="config-block"><code>codex mcp add --transport http jlc-search ${MCP_URL}</code></pre>
+      <p style="font-size: 0.85em; color: #aaa;">Then manually add <code>bearer_token_env_var = "JLCSEARCH_API_KEY"</code> to the <code>[mcp_servers.jlc-search]</code> section in your config.toml.</p>
     </div>
 
     <div id="guide-generic" class="guide-content">
