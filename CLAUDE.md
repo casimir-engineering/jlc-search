@@ -208,6 +208,57 @@ Category-specific regex extractors (42 functions, 4036 lines):
 Table-aware: `scanTable()` handles pdftotext -layout multi-line headers (8-line window).
 Spec-row scanner: `scanSpecRow()` strips test conditions, skips pin assignments, multi-line fallback.
 
+## Search Architecture
+
+4-tier search with client-side boost re-ranking:
+1. **Tier 0**: PostgreSQL FTS prefix match on `search_vec` (weighted A-D), LIMIT 500
+2. **Tier 0.5**: N-1 token fallback (drops longest token)
+3. **Tier 1a**: Manufacturer trigram substring (ILIKE)
+4. **Tier 1b**: Full-text trigram substring — skipped when Tier 0 saturates
+
+Performance optimizations:
+- **EXPLAIN estimate** for total count (34ms vs 430ms COUNT(*))
+- **Skip prefix matching** on 1-2 char tokens (avoids GIN posting list explosion)
+- **No attributes JSONB** in search SELECT (9x faster per query)
+- **80ms debounce** on frontend (was 500-1000ms)
+- **content-visibility: auto** on PartCards
+- **Deep pagination** via SQL OFFSET for stock/price sorts beyond tier limits
+- **30s Cache-Control** with stale-while-revalidate on search responses
+- **Gzip** on nginx for JSON/SVG/JS/CSS responses
+
+## Image System
+
+3-tier source rotation with health tracking:
+1. **JLCPCB accessId API** — queries `selectSmtComponentList` for `productBigImageAccessId`, downloads via `downloadByFileSystemAccessId`. ~80% coverage, no IP block.
+2. **Direct LCSC CDN** — `assets.lcsc.com/images/lcsc/900x900/`. Works if not IP-blocked.
+3. **wsrv.nl proxy** — free image proxy, bypasses CDN IP blocks. 100% coverage.
+
+Health tracking: after 3 consecutive failures a source is deprioritized (tried last). Re-checked every 10 minutes. Round-robin rotation among healthy sources.
+
+Schematic/footprint SVGs rendered from EasyEDA API data, cached to disk. Content-Length set explicitly via `new Response()` to avoid Hono middleware timing issue.
+
+## Frontend Features
+
+- **Search highlighting**: `<mark>` tags on MPN, description, manufacturer, attribute values
+- **Range filter badges**: matched values (e.g., "22Ω") shown as gold badges next to package
+- **Mobile lightbox**: tap images to open centered overlay with dismiss
+- **Category multi-select**: chip dropdown with search, counts, clear-all
+- **Stock/sort dropdowns**: ChipSelect component with Unicode ▼ arrows
+- **Donate bar**: thin amber bar at top, links to /donate page (SPA routing)
+- **Donate page**: Patreon, WeChat Pay, Alipay QR codes, TWINT button
+
+## Deployment
+
+One-command deploy: `./setup.sh your-domain.com`
+- Installs Docker, generates passwords, builds images, starts services
+- SSL via Nginx Proxy Manager + Let's Encrypt (auto-renewing)
+- See `SETUP.md` for full guide, `DEPLOY.md` for architecture details
+
+## Skills
+
+- `/ingest` — Full ingestion pipeline orchestrator (download → process → datasheets → app relaunch → health check)
+- `/scrape` — Parallel scraper outer loop with monitoring agents
+
 ## Environment Variables
 
 | Variable | Purpose | Default |
@@ -218,3 +269,7 @@ Spec-row scanner: `scanSpecRow()` strips test conditions, skips pin assignments,
 | `JLCPARTS_BASE` | jlcparts mirror URL | `https://yaqwsx.github.io/jlcparts` |
 | `INGEST_CONCURRENCY` | Parallel download workers | `4` |
 | `VITE_API_BASE` | Frontend API base URL | `` (relative) |
+| `DOMAIN` | Production domain for SSL | — |
+| `NPM_ADMIN_EMAIL` | Nginx Proxy Manager admin email | — |
+| `NPM_ADMIN_PASS` | NPM admin password | Auto-generated |
+| `LETSENCRYPT_EMAIL` | Let's Encrypt certificate email | — |
