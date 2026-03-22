@@ -209,7 +209,7 @@ export function App() {
     <div className={`app ${hasResults ? "app-results-mode" : "app-home-mode"}`}>
       <div className="donate-bar">
         <span>Did this save you time? Help cover our pricey Asia hosting costs.</span>
-        <a href="/donate" className="donate-btn" onClick={(e) => { e.preventDefault(); setShowDonate(true); window.history.pushState(null, "", "/donate"); }}>15 seconds donation - try without losing your search!</a>
+        <a href="/donate" className="donate-btn" onClick={(e) => { e.preventDefault(); setShowDonate(true); window.history.pushState(null, "", "/donate"); }}>Donate and get MCP server access!</a>
       </div>
       {showDonate ? (
         <DonatePage onBack={() => { setShowDonate(false); window.history.pushState(null, "", query ? `/?q=${encodeURIComponent(query)}` : "/"); }} />
