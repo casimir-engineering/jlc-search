@@ -7,6 +7,7 @@ import { register as registerSearchParts } from "./tools/search-parts.ts";
 import { register as registerGetPart } from "./tools/get-part.ts";
 import { register as registerListCategories } from "./tools/list-categories.ts";
 import { register as registerCompareParts } from "./tools/compare-parts.ts";
+import { register as registerCreateBom } from "./tools/create-bom.ts";
 
 import { authMiddleware } from "./auth.ts";
 import { handlePatreonWebhook, handleKeyPage } from "./patreon.ts";
@@ -71,6 +72,7 @@ function createMcpServer(apiKeyId?: string): McpServer {
   registerGetPart(server);
   registerListCategories(server);
   registerCompareParts(server);
+  registerCreateBom(server);
 
   return server;
 }
