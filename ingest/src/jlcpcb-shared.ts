@@ -3,7 +3,7 @@
  * Used by download-jlcpcb.ts, download-lcsc.ts, and process-jlcpcb.ts.
  */
 import { translateChinese } from "./chinese-dict.ts";
-import { buildSearchText } from "./attrs.ts";
+import { buildSearchText, inferMountingType } from "./attrs.ts";
 import type { PartRow, QueryParams } from "./types.ts";
 
 // ── Constants ──
@@ -335,7 +335,7 @@ export function convertPart(p: JlcPart): PartRow {
     part_type: partType,
     pcba_type: pcbaType,
     attributes: attrsJson,
-    search_text: buildSearchText(attrsJson),
+    search_text: [buildSearchText(attrsJson), inferMountingType(translateChinese(p.componentSpecificationEn || "") || null, attrsJson)].filter(Boolean).join(" "),
   };
 }
 

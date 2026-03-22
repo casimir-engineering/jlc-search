@@ -233,6 +233,109 @@ export function extractNumericAttrs(attrsJson: string, description?: string): Nu
   return results;
 }
 
+// ── Mounting type inference ──────────────────────────────────────────
+
+/** SMD package patterns — derived from 446k+ parts in the JLCPCB/LCSC database */
+const SMD_PATTERNS: RegExp[] = [
+  /^\d{4}([x×(,\s_-]|$)/,              // Chip sizes: 0201, 0402, 0603, 0805, 1206, 2512, etc.
+  /^01005$/,                             // Smallest chip size
+  /^SMD/i,                               // Explicit SMD prefix
+  /^SMT([,\s_-]|$)/i,                   // Explicit SMT prefix
+  /^SOIC|^SO-?\d/,                       // SOIC-8, SO-8
+  /SOP|SSOP|TSSOP|MSOP|QSOP|ESOP|HSOP|VSSOP|HTSSOP/i, // SOP family
+  /^DSO[FNP]?-?\d/,                     // DSO packages
+  /^SOT-?\d/,                           // SOT-23, SOT-89, SOT-223, SOT-363, etc.
+  /^[TS]SOT/,                           // TSOT, SSOT variants
+  /^SC-?\d\d/,                          // SC-70, SC-88, SC-59
+  /^SOD-?\d/,                           // SOD-123, SOD-323, SOD-523
+  /QFP/i,                               // QFP/LQFP/TQFP/PQFP/VQFP/UFQFPN...
+  /QFN|DFN/i,                           // QFN/DFN/WQFN/TDFN/VSON/WSON/PDFN/UDFN...
+  /BGA|WLCSP|WLP-?\d|CSP-?\d|DSBGA/i,  // BGA family + wafer-level
+  /^LGA-?\d/,                           // LGA
+  /^PLCC/,                              // PLCC
+  /^CLCC|^LCC([,\s_(-]|$)/,            // CLCC, LCC
+  /^TSOP/,                              // TSOP
+  /^CERPACK/,                           // Ceramic flat pack
+  /^SM[ABC][FGJCE]?([,\s_(-]|$)/,      // SMA, SMB, SMC diode packages
+  /^DO-?2[1-2]\d/,                      // DO-213 through DO-221 (SMD diode)
+  /^MELF|MiniMELF|QuadroMELF/i,        // MELF packages
+  /^LL-?[34]\d/,                        // LL-34, LL-41 (MELF variants)
+  /D[23]?PAK|DPAK|DDPAK|ATPAK/i,       // DPAK family
+  /^TO-?252|^TO-?263|^TO-?277/,         // SMD TO packages
+  /^TO-?236|^TO-?243|^TO-?261/,         // SOT aliases
+  /^TOLL([,\s_-]|$)/i,                  // TOLL power package
+  /^HC-?49S?-?SMD|^HC-?49US|^HC-?49SM|^MA-?406|^OSC-?SMD/i, // Crystal SMD
+  /^[RCBA]\d{4}([,\s_-]|$)/,           // Prefixed chips: R0402, C0805
+  /^CASE-?[A-Z]/i,                      // Tantalum CASE codes
+  /^LED\d{3,4}/,                        // LED0603, LED0805
+  /CONN-?SMD|LED-?SMD|FPC-?SMD|FFC-?SMD|SW-?SMD/i, // Component-type SMD
+  /PowerPAK|PowerDI|TDSON/i,            // Power SMD packages
+  /^USP[CNEL]?-?\d/i,                   // USP family
+  /^SOJ/,                               // SOJ (small outline J-lead)
+  /^CFP-?\d/,                           // Ceramic flat pack
+  /^XFLGA/,                             // XFLGA
+];
+
+/** THT package patterns — derived from 446k+ parts in the JLCPCB/LCSC database */
+const THT_PATTERNS: RegExp[] = [
+  /^DIP([-_ ,(\d]|$)|^PDIP|^SDIP|^CDIP|^CERDIP|^SPDIP/i, // DIP family
+  /^SIP[-_ ,\d(]|^SIP$/i,               // SIP modules
+  /^Plugin/i,                            // Plugin (very common in JLCPCB)
+  /Through.?[Hh]ol/i,                   // Through-hole explicit
+  /^TH-?\d+P|^TH([,\s_-]|$)/,          // TH-2P, TH-4P
+  /^TO-?220(?!.*SMD)|^ITO-?220/,        // TO-220 (not SMD variant)
+  /^TO-?92/,                            // TO-92
+  /^TO-?247/,                           // TO-247
+  /^TO-?3([P\s,(-]|$)/,                // TO-3, TO-3P
+  /^TO-?126/,                           // TO-126
+  /^TO-?251|^IPAK([,\s(-]|$)/,         // TO-251 / IPAK
+  /^TO-?262|^I2PAK/,                    // TO-262 / I2PAK
+  /^TO-?264|^TO-?268|^TO-?270|^TO-?274|^TO-?275/,  // Large TO packages
+  /^TO-?218/,                           // TO-218
+  /^TO-?39|^TO-?46|^TO-?18|^TO-?99|^TO-?66|^TO-?48/,  // TO-can packages
+  /^TO-?5([,\s_(-]|$)|^TO-?56|^TO-?202|^TO-?225/,     // TO-5 etc.
+  /^TO-?CAN/i,                          // TO-CAN
+  /^DO-?35|^DO-?41|^DO-?15([,\s_(-]|$)|^DO-?27/,  // Axial diodes
+  /^DO-?20[0-9]/,                       // DO-201, DO-204
+  /^DO-?7([,\s_(-]|$)|^DO-?[45]([,\s_(-]|$)/,  // Stud-mount
+  /^DO-?13([,\s_(-]|$)|^DO-?247/,      // DO-13, DO-247
+  /^GB[UJP]|^KB[UPS]|^MBS|^DBS/i,      // Bridge rectifiers
+  /^P600/,                              // P600 power diode
+  /^R-?6([^0-9]|$)/,                   // R-6 diode
+  /^Axial/i,                            // Axial
+  /^Bolt/i,                             // Bolt mount
+  /^HC-?49U|^HC-?49S?([,\s_-]|$)(?!.*SMD)/i,  // Crystal THT
+  /^DT-?\d/,                            // DT crystal packages
+  /^ZIP/,                               // ZIP package
+  /^PGA/,                               // PGA
+  /CONN-?TH|HDR-?TH/i,                 // Component-type THT
+  /^Straight/i,                         // Straight connectors
+];
+
+/**
+ * Infer mounting type from package name and attributes.
+ * Returns searchable keywords: "SMD SMT surface-mount" or "THT TH through-hole" or "".
+ */
+export function inferMountingType(pkg: string | null, attrsJson: string): string {
+  // Check attributes for explicit mounting type (highest confidence)
+  if (/Surface\s*Mount|Reverse\s*Mount|Top-mount|Side View Mount/i.test(attrsJson)) return "SMD SMT surface-mount";
+  if (/Through[\s-]*[Hh]ole/i.test(attrsJson)) return "THT TH through-hole";
+
+  // Infer from package name
+  if (!pkg) return "";
+  const trimmed = pkg.trim();
+  if (!trimmed || trimmed === "-") return "";
+
+  for (const re of SMD_PATTERNS) {
+    if (re.test(trimmed)) return "SMD SMT surface-mount";
+  }
+  for (const re of THT_PATTERNS) {
+    if (re.test(trimmed)) return "THT TH through-hole";
+  }
+
+  return "";
+}
+
 /**
  * Build a searchable text string from the attributes JSON blob.
  * Returns space-separated tokens suitable for FTS5 indexing.

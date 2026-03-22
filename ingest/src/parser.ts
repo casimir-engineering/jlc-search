@@ -1,5 +1,5 @@
 import type { PartRow } from "./types.ts";
-import { buildSearchText } from "./attrs.ts";
+import { buildSearchText, inferMountingType } from "./attrs.ts";
 import { translateChinese } from "./chinese-dict.ts";
 
 /**
@@ -118,6 +118,6 @@ export function parseComponent(
     part_type: partType,
     pcba_type: pcbaType,
     attributes: JSON.stringify(attrs),
-    search_text: buildSearchText(JSON.stringify(attrs)),
+    search_text: [buildSearchText(JSON.stringify(attrs)), inferMountingType(translateChinese(pkg ?? "") || null, JSON.stringify(attrs))].filter(Boolean).join(" "),
   };
 }
