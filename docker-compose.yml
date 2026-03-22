@@ -70,6 +70,7 @@ services:
       DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env}
       MCP_PORT: "3002"
       BACKEND_URL: "http://localhost:3001"
+      MCP_REQUIRE_AUTH: "true"
     depends_on:
       - backend
     restart: unless-stopped

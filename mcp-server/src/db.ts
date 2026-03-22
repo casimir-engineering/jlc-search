@@ -1,5 +1,6 @@
 import postgres from "postgres";
 import { applySchema } from "../../backend/src/schema.ts";
+import { applyMcpSchema } from "./schema.ts";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) {
@@ -19,7 +20,7 @@ export function getSql(): ReturnType<typeof postgres> {
     onnotice: () => {},
     connection: { statement_timeout: 10_000 },
   });
-  _ready = applySchema(_sql);
+  _ready = applySchema(_sql).then(() => applyMcpSchema(_sql!));
   return _sql;
 }
 
