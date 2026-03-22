@@ -346,7 +346,7 @@ export async function handleKeyPage(c: Context): Promise<Response> {
   }
 }</code></pre>
       <p>Or run:</p>
-      <pre class="config-block"><code>claude mcp add jlc-search --url ${MCP_URL}</code></pre>
+      <pre class="config-block"><code>claude mcp add --transport http --header "Authorization: Bearer ${escHtml(apiKey)}" jlc-search ${MCP_URL}</code></pre>
     </div>
 
     <div id="guide-codex-cli" class="guide-content">
