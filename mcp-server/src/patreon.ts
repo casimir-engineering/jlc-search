@@ -378,8 +378,9 @@ Available tools:
 - get_part: Get full details for a part by LCSC code
 - list_categories: Browse component categories
 - compare_parts: Compare up to 10 parts side by side
+- create_bom: Build a BOM with quantities, get pricing summary + shareable link
 
-Configure the MCP server and use it to help me find electronic components.</code></pre>
+Configure the MCP server and use it to help me find electronic components and build BOMs.</code></pre>
     </div>
   </div>
 
@@ -389,7 +390,7 @@ Configure the MCP server and use it to help me find electronic components.</code
 GET  /mcp-api/health       \u2014 Health check
 GET  /mcp-api/key          \u2014 This page (get your API key)
 
-Tools: search_parts, get_part, list_categories, compare_parts</code></pre>
+Tools: search_parts, get_part, list_categories, compare_parts, create_bom</code></pre>
   </details>
 
   <script>
