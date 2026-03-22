@@ -290,11 +290,21 @@ export async function handleKeyPage(c: Context): Promise<Response> {
   const safeName = escHtml(fullName);
 
   const tierColors: Record<string, string> = {
-    hobbyist: "#4a9eff",
-    engineer: "#f5a623",
-    addict: "#a855f7",
+    hobbyist: "#0066cc",
+    engineer: "#d97706",
+    addict: "#7c3aed",
   };
   const tierColor = tierColors[tier] ?? "#4a9eff";
+
+  const tools = [
+    { name: "search_parts", desc: "Search 3.5M+ components with filters" },
+    { name: "get_part", desc: "Full details for any LCSC part" },
+    { name: "list_categories", desc: "Browse component categories" },
+    { name: "compare_parts", desc: "Side-by-side part comparison" },
+    { name: "create_bom", desc: "Build a BOM with shareable link" },
+  ];
+
+  const toolCards = tools.map(t => `<div class="tool-card"><span class="tool-name">${t.name}</span><span class="tool-desc">${t.desc}</span></div>`).join("\n      ");
 
   const body = `
   <div class="greeting">
@@ -310,18 +320,40 @@ export async function handleKeyPage(c: Context): Promise<Response> {
     </div>
   </div>
 
+  <div class="tools-section">
+    <label class="section-label">Your AI gets access to</label>
+    <div class="tools-grid">
+      ${toolCards}
+    </div>
+  </div>
+
   <div class="setup-section">
     <label class="section-label" for="guide-select">Setup Guide</label>
     <select id="guide-select" class="guide-dropdown" onchange="showGuide(this.value)">
+      <option value="generic" selected>Generic / Other AI</option>
       <option value="claude-desktop">Claude Desktop</option>
       <option value="claude-code">Claude Code</option>
       <option value="codex-cli">Codex CLI</option>
-      <option value="generic" selected>Generic / Other AI</option>
     </select>
+
+    <div id="guide-generic" class="guide-content active">
+      <p>Give this prompt to your AI:</p>
+      <pre class="config-block"><code>I have access to a JLCsearch MCP server at ${MCP_URL}
+with API key: ${escHtml(apiKey)} (send as Authorization: Bearer header).
+
+Available tools:
+- search_parts: Search 3.5M+ electronic components with filters
+- get_part: Get full details for a part by LCSC code
+- list_categories: Browse component categories
+- compare_parts: Compare up to 10 parts side by side
+- create_bom: Build a BOM with quantities, get pricing summary + shareable link
+
+Configure the MCP server and use it to help me find electronic components and build BOMs.</code></pre>
+    </div>
 
     <div id="guide-claude-desktop" class="guide-content">
       <p>Add to your Claude Desktop config file:</p>
-      <ul style="font-size:0.85em;color:#aaa;margin:4px 0 12px 18px">
+      <ul class="path-list">
         <li><b>macOS</b>: <code>~/Library/Application Support/Claude/claude_desktop_config.json</code></li>
         <li><b>Windows</b>: <code>%APPDATA%\\Claude\\claude_desktop_config.json</code></li>
         <li><b>Linux</b>: <code>~/.config/Claude/claude_desktop_config.json</code></li>
@@ -365,33 +397,9 @@ url = "${MCP_URL}"
 bearer_token_env_var = "JLCSEARCH_API_KEY"</code></pre>
       <p>Or add via CLI:</p>
       <pre class="config-block"><code>codex mcp add --transport http jlc-search ${MCP_URL}</code></pre>
-      <p style="font-size: 0.85em; color: #aaa;">Then manually add <code>bearer_token_env_var = "JLCSEARCH_API_KEY"</code> to the <code>[mcp_servers.jlc-search]</code> section in your config.toml.</p>
-    </div>
-
-    <div id="guide-generic" class="guide-content active">
-      <p>Give this prompt to your AI:</p>
-      <pre class="config-block"><code>I have access to a JLCsearch MCP server at ${MCP_URL}
-with API key: ${escHtml(apiKey)} (send as Authorization: Bearer header).
-
-Available tools:
-- search_parts: Search 3.5M+ electronic components with filters
-- get_part: Get full details for a part by LCSC code
-- list_categories: Browse component categories
-- compare_parts: Compare up to 10 parts side by side
-- create_bom: Build a BOM with quantities, get pricing summary + shareable link
-
-Configure the MCP server and use it to help me find electronic components and build BOMs.</code></pre>
+      <p class="hint-text">Then manually add <code>bearer_token_env_var = "JLCSEARCH_API_KEY"</code> to the <code>[mcp_servers.jlc-search]</code> section in your config.toml.</p>
     </div>
   </div>
-
-  <details class="endpoints-section">
-    <summary>MCP Endpoints</summary>
-    <pre class="config-block"><code>POST /mcp-api/mcp         \u2014 MCP protocol endpoint
-GET  /mcp-api/health       \u2014 Health check
-GET  /mcp-api/key          \u2014 This page (get your API key)
-
-Tools: search_parts, get_part, list_categories, compare_parts, create_bom</code></pre>
-  </details>
 
   <script>
     function copyKey() {
@@ -434,27 +442,28 @@ function renderPage(title: string, body: string): string {
       max-width: 680px;
       margin: 48px auto;
       padding: 0 24px;
-      background: #0d0d1a;
-      color: #e0e0e0;
+      background: #f5f5f5;
+      color: #1a1a1a;
       line-height: 1.6;
     }
-    a { color: #7eb8ff; }
-    code { font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace; }
+    a { color: #0066cc; }
+    code { font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace; font-size: 0.85rem; }
 
     /* Greeting */
     .greeting {
       display: flex;
       align-items: center;
       gap: 12px;
-      margin-bottom: 32px;
+      margin-bottom: 28px;
     }
     .greeting h2 {
-      color: #7eb8ff;
+      color: #1a1a1a;
       margin: 0;
-      font-size: 1.6rem;
+      font-size: 1.5rem;
+      font-weight: 600;
     }
     .tier-badge {
-      font-size: 0.75rem;
+      font-size: 0.72rem;
       font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.05em;
@@ -467,7 +476,7 @@ function renderPage(title: string, body: string): string {
     /* Section labels */
     .section-label {
       display: block;
-      font-size: 0.8rem;
+      font-size: 0.78rem;
       font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.06em;
@@ -476,66 +485,113 @@ function renderPage(title: string, body: string): string {
     }
 
     /* Key box */
-    .key-section { margin-bottom: 32px; }
+    .key-section { margin-bottom: 28px; }
     .key-box {
       display: flex;
       align-items: center;
       gap: 12px;
-      background: #1a1a2e;
-      border: 1px solid #2a2a4a;
+      background: #fff;
+      border: 1.5px solid #e8e8e8;
       border-radius: 8px;
       padding: 14px 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
     }
     .key-box code {
       flex: 1;
-      color: #0f0;
-      font-size: 1.05rem;
+      color: #0066cc;
+      font-size: 1rem;
+      font-weight: 500;
       word-break: break-all;
       user-select: all;
+      font-family: monospace;
     }
     .copy-btn {
-      background: #2a2a4a;
-      color: #7eb8ff;
-      border: 1px solid #3a3a5a;
-      border-radius: 6px;
+      background: #0066cc;
+      color: #fff;
+      border: none;
+      border-radius: 5px;
       padding: 6px 14px;
-      font-size: 0.85rem;
+      font-size: 0.82rem;
       font-weight: 500;
       cursor: pointer;
       white-space: nowrap;
       transition: background 0.15s;
     }
-    .copy-btn:hover { background: #3a3a5a; }
+    .copy-btn:hover { background: #0052a3; }
+
+    /* Tool cards */
+    .tools-section { margin-bottom: 28px; }
+    .tools-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 10px;
+    }
+    .tool-card {
+      background: #fff;
+      border: 1.5px solid #e8e8e8;
+      border-radius: 8px;
+      padding: 12px 14px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .tool-card:hover {
+      border-color: #0066cc;
+      box-shadow: 0 3px 8px rgba(0,0,0,0.1);
+    }
+    .tool-name {
+      display: block;
+      font-family: monospace;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: #0066cc;
+      margin-bottom: 4px;
+    }
+    .tool-desc {
+      display: block;
+      font-size: 0.78rem;
+      color: #666;
+      line-height: 1.4;
+    }
 
     /* Setup guide */
-    .setup-section { margin-bottom: 32px; }
+    .setup-section { margin-bottom: 28px; }
     .guide-dropdown {
       display: block;
       width: 100%;
       padding: 10px 14px;
-      font-size: 0.95rem;
-      background: #1a1a2e;
-      color: #e0e0e0;
-      border: 1px solid #2a2a4a;
+      font-size: 0.92rem;
+      background: #fff;
+      color: #1a1a1a;
+      border: 1.5px solid #d0d0d0;
       border-radius: 8px;
       appearance: none;
       -webkit-appearance: none;
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%237eb8ff' d='M1 1l5 5 5-5'/%3E%3C/svg%3E");
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%230066cc' d='M1 1l5 5 5-5'/%3E%3C/svg%3E");
       background-repeat: no-repeat;
       background-position: right 14px center;
       cursor: pointer;
       margin-bottom: 16px;
     }
-    .guide-dropdown:focus { outline: 2px solid #7eb8ff; outline-offset: 1px; }
+    .guide-dropdown:focus { outline: 2px solid #0066cc; outline-offset: 1px; }
 
     .guide-content { display: none; }
     .guide-content.active { display: block; }
-    .guide-content p { margin: 0 0 10px 0; font-size: 0.92rem; }
+    .guide-content p { margin: 0 0 10px 0; font-size: 0.88rem; color: #444; }
     .guide-content p code {
-      background: #1a1a2e;
+      background: #f0f0f0;
       padding: 2px 6px;
       border-radius: 4px;
-      font-size: 0.85rem;
+      font-size: 0.82rem;
+    }
+    .path-list {
+      font-size: 0.82rem;
+      color: #666;
+      margin: 4px 0 12px 18px;
+      line-height: 1.8;
+    }
+    .hint-text {
+      font-size: 0.82rem;
+      color: #888;
     }
 
     /* Config code blocks */
@@ -549,31 +605,8 @@ function renderPage(title: string, body: string): string {
     }
     .config-block code {
       color: #e0e0e0;
-      font-size: 0.85rem;
+      font-size: 0.82rem;
       white-space: pre;
-    }
-
-    /* Endpoints collapsible */
-    .endpoints-section {
-      margin-top: 24px;
-      border: 1px solid #2a2a4a;
-      border-radius: 8px;
-      overflow: hidden;
-    }
-    .endpoints-section summary {
-      padding: 12px 16px;
-      background: #1a1a2e;
-      cursor: pointer;
-      font-weight: 600;
-      font-size: 0.92rem;
-      color: #7eb8ff;
-      user-select: none;
-    }
-    .endpoints-section summary:hover { background: #22223a; }
-    .endpoints-section .config-block {
-      border: none;
-      border-radius: 0;
-      margin: 0;
     }
   </style>
 </head>
