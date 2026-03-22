@@ -27,13 +27,21 @@ function applyBoost(results: (PartSummary & { score: number })[], q: string): (P
       else if (mpnLower === qLower) boost += 800;
       else if (mpnLower.startsWith(qLower)) boost += 400;
       else if (lcscLower.startsWith(qLower)) boost += 300;
-      // Field-match boost: approximate ts_rank_cd weight classes in app layer
+      // Field-match boost: reward matching more tokens, big bonus for all-match
       if (qTokens.length > 1) {
         const descLower = (r.description || "").toLowerCase();
+        const fullLower = `${mpnLower} ${descLower} ${(r.manufacturer || "").toLowerCase()} ${(r.package || "").toLowerCase()}`;
+        let matched = 0;
         for (const tok of qTokens) {
-          if (mpnLower.includes(tok)) boost += 50;
-          else if (descLower.includes(tok)) boost += 20;
+          if (fullLower.includes(tok)) {
+            matched++;
+            if (mpnLower.includes(tok)) boost += 50;
+            else boost += 20;
+          }
         }
+        // Big bonus for matching ALL tokens (full match >> partial match)
+        if (matched === qTokens.length) boost += 500;
+        else if (matched >= qTokens.length - 1) boost += 200;
       }
       if (r.part_type === "Basic") boost += 50;
       else if (r.part_type === "Preferred") boost += 25;
@@ -211,7 +219,7 @@ export async function search(params: SearchParams): Promise<{ results: PartSumma
   if (!andQ) return { results: [], total: 0 };
 
   const isMultiToken = !params.matchAll && textQuery.includes(" ");
-  const ftsQuery = isMultiToken ? (buildTsOrQuery(textQuery, parsed.phrases) || andQ) : andQ;
+  const orQ = isMultiToken ? (buildTsOrQuery(textQuery, parsed.phrases) || andQ) : null;
 
   // Tier limits: how many rows each tier fetches for ranking.
   // Total displayed = deduped union of all tiers, paginated by offset/limit.
@@ -219,21 +227,35 @@ export async function search(params: SearchParams): Promise<{ results: PartSumma
   const TIER1_LIMIT = 500;
 
   try {
-    // ── Tier 0: FTS prefix match (fast, highest quality) ──────────
+    // ── Tier 0: FTS AND match (all tokens must match — highest quality) ──
     const tier0Rows = await sql`
       SELECT ${sql.unsafe(SELECT_COLS)}
       FROM parts p
-      WHERE p.search_vec @@ to_tsquery('simple', ${ftsQuery})
+      WHERE p.search_vec @@ to_tsquery('simple', ${andQ})
       ${rangeFilter} ${colFilter} ${typeFilter} ${categoryFilter} ${economicFilter} ${stockFilter} ${negFilter}
       ORDER BY p.stock DESC
       LIMIT ${TIER0_LIMIT}
     `;
 
-    // ── Tier 0.5: N-1 token drop fallback (multi-token, few AND results) ──
+    // ── Tier 0.5: OR fallback (partial token matches, lower score) ──
     const tier05Rows: Record<string, unknown>[] = [];
     const tokens = textQuery.trim().split(/\s+/).filter(Boolean);
 
-    // Tier 0.5 removed — OR semantics in Tier 0 already covers partial matches
+    if (orQ && tier0Rows.length < TIER0_LIMIT) {
+      const t0Lcscs = tier0Rows.map((r) => r.lcsc as string);
+      const t0Exclude = t0Lcscs.length > 0 ? sql`AND p.lcsc != ALL(${t0Lcscs})` : sql``;
+      const t05Limit = TIER0_LIMIT - tier0Rows.length;
+      const t05Rows = await sql`
+        SELECT ${sql.unsafe(SELECT_COLS)}
+        FROM parts p
+        WHERE p.search_vec @@ to_tsquery('simple', ${orQ})
+        ${t0Exclude}
+        ${rangeFilter} ${colFilter} ${typeFilter} ${categoryFilter} ${economicFilter} ${stockFilter} ${negFilter}
+        ORDER BY p.stock DESC
+        LIMIT ${t05Limit}
+      `;
+      tier05Rows.push(...t05Rows);
+    }
 
     // ── Tier 1: Substring ILIKE (trigram indexes on mpn, manufacturer, full_text) ──
     // Build ILIKE patterns from text tokens and phrases
@@ -345,11 +367,13 @@ export async function search(params: SearchParams): Promise<{ results: PartSumma
     ];
 
     // Fast total estimate using EXPLAIN (avoids slow COUNT(*) on broad queries)
+    // Use OR query for estimate if available (broader match = better total), else AND
+    const estimateQ = orQ ?? andQ;
     let totalCount = results.length;
     try {
       const explainRows = await sql`
         EXPLAIN (FORMAT JSON) SELECT 1 FROM parts p
-        WHERE p.search_vec @@ to_tsquery('simple', ${ftsQuery})
+        WHERE p.search_vec @@ to_tsquery('simple', ${estimateQ})
         ${rangeFilter} ${colFilter} ${typeFilter} ${categoryFilter} ${economicFilter} ${stockFilter} ${negFilter}
       `;
       const plan = (explainRows[0] as any)?.["QUERY PLAN"]?.[0]?.Plan;
@@ -373,7 +397,7 @@ export async function search(params: SearchParams): Promise<{ results: PartSumma
       const deepRows = await sql`
         SELECT ${sql.unsafe(SELECT_COLS)}
         FROM parts p
-        WHERE p.search_vec @@ to_tsquery('simple', ${ftsQuery})
+        WHERE p.search_vec @@ to_tsquery('simple', ${andQ})
         ${rangeFilter} ${colFilter} ${typeFilter} ${categoryFilter} ${economicFilter} ${stockFilter} ${negFilter}
         ORDER BY ${orderFrag}
         LIMIT ${limit} OFFSET ${offset}

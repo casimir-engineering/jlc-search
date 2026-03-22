@@ -131,13 +131,15 @@ PK: (category, subcategory), `sourcename`, `datahash`, `stockhash`, `ingested_at
 
 ## Search Architecture
 
+**CRITICAL PRINCIPLE: Full matches MUST rank above partial matches.** For multi-token queries like "100nF 0402 ceramic", parts matching ALL tokens must appear first. Partial matches (matching 1-2 tokens) appear later. Never use OR-only logic for the primary tier.
+
 4-tier search with client-side boost re-ranking:
-1. **Tier 0**: PostgreSQL FTS prefix match on `search_vec` (weighted A-D)
-2. **Tier 0.5**: N-1 token fallback (drops longest token)
+1. **Tier 0**: PostgreSQL FTS **AND** match on `search_vec` (all tokens must match), LIMIT 500
+2. **Tier 0.5**: FTS **OR** fallback (partial token matches, only runs if Tier 0 < 500 results)
 3. **Tier 1a**: Manufacturer trigram substring (ILIKE)
 4. **Tier 1b**: Full-text trigram substring (ILIKE on `full_text`)
 
-Boost factors: exact LCSC (+1000), exact MPN (+800), MPN prefix (+400), part type bonus, LCSC recency
+Boost factors: all-token match (+500), N-1 token match (+200), exact LCSC (+1000), exact MPN (+800), MPN prefix (+400), per-token field match (+50 MPN / +20 desc), part type bonus, LCSC recency
 
 Filters: `partType[]`, `stockFilter` (none/jlc/lcsc/any), `economic`, range filters via `part_nums`
 
@@ -210,9 +212,11 @@ Spec-row scanner: `scanSpecRow()` strips test conditions, skips pin assignments,
 
 ## Search Architecture
 
+**CRITICAL: Full matches rank above partial matches.** Tier 0 uses AND (all tokens), Tier 0.5 uses OR (partial).
+
 4-tier search with client-side boost re-ranking:
-1. **Tier 0**: PostgreSQL FTS prefix match on `search_vec` (weighted A-D), LIMIT 500
-2. **Tier 0.5**: N-1 token fallback (drops longest token)
+1. **Tier 0**: PostgreSQL FTS **AND** match on `search_vec` (all tokens), LIMIT 500
+2. **Tier 0.5**: FTS **OR** fallback (partial matches, fills remaining slots if Tier 0 < 500)
 3. **Tier 1a**: Manufacturer trigram substring (ILIKE)
 4. **Tier 1b**: Full-text trigram substring — skipped when Tier 0 saturates
 
