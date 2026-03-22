@@ -2,7 +2,7 @@ import { useState, useCallback } from "react";
 import type { Filters } from "../types.ts";
 
 const STORAGE_KEY = "jlc-filters";
-const FILTER_VERSION = 2; // Bump this when filter shape changes
+const FILTER_VERSION = 3; // Bump this when filter shape changes
 
 interface StoredFilters {
   version: number;
@@ -12,7 +12,7 @@ interface StoredFilters {
 const DEFAULT_FILTERS: Filters = {
   partTypes: [],
   categories: [],
-  stockFilter: "none",
+  stockFilter: "any",
   economicOnly: false,
   fuzzy: false,
   sort: "relevance",
