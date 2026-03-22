@@ -1,6 +1,6 @@
 import { getSql } from "../db.ts";
 import {
-  buildTsQuery, buildNegationTsQuery,
+  buildTsQuery, buildTsOrQuery, buildNegationTsQuery,
   detectLcscCode, parseQuery, type RangeFilter,
 } from "./parser.ts";
 import type { PartSummary, SearchParams } from "../types.ts";
@@ -211,6 +211,7 @@ export async function search(params: SearchParams): Promise<{ results: PartSumma
   if (!andQ) return { results: [], total: 0 };
 
   const isMultiToken = !params.matchAll && textQuery.includes(" ");
+  const ftsQuery = isMultiToken ? (buildTsOrQuery(textQuery, parsed.phrases) || andQ) : andQ;
 
   // Tier limits: how many rows each tier fetches for ranking.
   // Total displayed = deduped union of all tiers, paginated by offset/limit.
@@ -222,7 +223,7 @@ export async function search(params: SearchParams): Promise<{ results: PartSumma
     const tier0Rows = await sql`
       SELECT ${sql.unsafe(SELECT_COLS)}
       FROM parts p
-      WHERE p.search_vec @@ to_tsquery('simple', ${andQ})
+      WHERE p.search_vec @@ to_tsquery('simple', ${ftsQuery})
       ${rangeFilter} ${colFilter} ${typeFilter} ${categoryFilter} ${economicFilter} ${stockFilter} ${negFilter}
       ORDER BY p.stock DESC
       LIMIT ${TIER0_LIMIT}
@@ -232,36 +233,7 @@ export async function search(params: SearchParams): Promise<{ results: PartSumma
     const tier05Rows: Record<string, unknown>[] = [];
     const tokens = textQuery.trim().split(/\s+/).filter(Boolean);
 
-    if (isMultiToken && tier0Rows.length < TIER0_LIMIT && tokens.length >= 2) {
-      const seen = new Set(tier0Rows.map((r) => r.lcsc as string));
-      const needed = TIER0_LIMIT - tier0Rows.length;
-
-      // Drop one token at a time, longest first (most specific) — keeps
-      // shorter/common tokens that narrow results, better perf.
-      // Cap at 3 sub-queries to bound total work.
-      const sorted = [...tokens].sort((a, b) => b.length - a.length);
-      for (const drop of sorted.slice(0, 3)) {
-        if (tier05Rows.length >= needed) break;
-        const remaining = tokens.filter((t) => t !== drop);
-        const subQ = buildTsQuery(remaining.join(" "), parsed.phrases);
-        if (!subQ || subQ === andQ) continue;
-        const subRows = await sql`
-          SELECT ${sql.unsafe(SELECT_COLS)}
-          FROM parts p
-          WHERE p.search_vec @@ to_tsquery('simple', ${subQ})
-            AND NOT p.search_vec @@ to_tsquery('simple', ${andQ})
-          ${rangeFilter} ${colFilter} ${typeFilter} ${categoryFilter} ${economicFilter} ${stockFilter} ${negFilter}
-          ORDER BY p.stock DESC
-          LIMIT ${needed - tier05Rows.length}
-        `;
-        for (const r of subRows) {
-          if (!seen.has(r.lcsc as string)) {
-            tier05Rows.push(r as Record<string, unknown>);
-            seen.add(r.lcsc as string);
-          }
-        }
-      }
-    }
+    // Tier 0.5 removed — OR semantics in Tier 0 already covers partial matches
 
     // ── Tier 1: Substring ILIKE (trigram indexes on mpn, manufacturer, full_text) ──
     // Build ILIKE patterns from text tokens and phrases
@@ -302,12 +274,14 @@ export async function search(params: SearchParams): Promise<{ results: PartSumma
       {
         let mfrWhere = sql`p.manufacturer ILIKE ${ilikeTokens[0]}`;
         for (let i = 1; i < ilikeTokens.length; i++) {
-          mfrWhere = sql`${mfrWhere} AND p.manufacturer ILIKE ${ilikeTokens[i]}`;
+          mfrWhere = isMultiToken
+            ? sql`${mfrWhere} OR p.manufacturer ILIKE ${ilikeTokens[i]}`
+            : sql`${mfrWhere} AND p.manufacturer ILIKE ${ilikeTokens[i]}`;
         }
         const t1aRows = await sql`
           SELECT ${sql.unsafe(SELECT_COLS)}
           FROM parts p
-          WHERE ${mfrWhere}
+          WHERE (${mfrWhere})
           ${excludeFilter} ${negFrag}
           ${rangeFilter} ${colFilter} ${typeFilter} ${categoryFilter} ${economicFilter} ${stockFilter}
           LIMIT ${T1_MFR_LIMIT}
@@ -328,13 +302,15 @@ export async function search(params: SearchParams): Promise<{ results: PartSumma
           : sql``;
         let ftWhere = sql`p.full_text ILIKE ${ilikeTokens[0]}`;
         for (let i = 1; i < ilikeTokens.length; i++) {
-          ftWhere = sql`${ftWhere} AND p.full_text ILIKE ${ilikeTokens[i]}`;
+          ftWhere = isMultiToken
+            ? sql`${ftWhere} OR p.full_text ILIKE ${ilikeTokens[i]}`
+            : sql`${ftWhere} AND p.full_text ILIKE ${ilikeTokens[i]}`;
         }
         const remaining = TIER1_LIMIT - tier1aRows.length - tier1bRows.length;
         const t1bRows = await sql`
           SELECT ${sql.unsafe(SELECT_COLS)}
           FROM parts p
-          WHERE ${ftWhere}
+          WHERE (${ftWhere})
           ${allExcludeFilter} ${negFrag}
           ${rangeFilter} ${colFilter} ${typeFilter} ${categoryFilter} ${economicFilter} ${stockFilter}
           LIMIT ${remaining}
@@ -373,7 +349,7 @@ export async function search(params: SearchParams): Promise<{ results: PartSumma
     try {
       const explainRows = await sql`
         EXPLAIN (FORMAT JSON) SELECT 1 FROM parts p
-        WHERE p.search_vec @@ to_tsquery('simple', ${andQ})
+        WHERE p.search_vec @@ to_tsquery('simple', ${ftsQuery})
         ${rangeFilter} ${colFilter} ${typeFilter} ${categoryFilter} ${economicFilter} ${stockFilter} ${negFilter}
       `;
       const plan = (explainRows[0] as any)?.["QUERY PLAN"]?.[0]?.Plan;
@@ -397,7 +373,7 @@ export async function search(params: SearchParams): Promise<{ results: PartSumma
       const deepRows = await sql`
         SELECT ${sql.unsafe(SELECT_COLS)}
         FROM parts p
-        WHERE p.search_vec @@ to_tsquery('simple', ${andQ})
+        WHERE p.search_vec @@ to_tsquery('simple', ${ftsQuery})
         ${rangeFilter} ${colFilter} ${typeFilter} ${categoryFilter} ${economicFilter} ${stockFilter} ${negFilter}
         ORDER BY ${orderFrag}
         LIMIT ${limit} OFFSET ${offset}
