@@ -336,6 +336,36 @@ export function inferMountingType(pkg: string | null, attrsJson: string): string
   return "";
 }
 
+/** WLCSP-family package patterns for alias keyword injection */
+const WLCSP_PATTERNS: RegExp[] = [
+  /WLCSP|WL-CSP|WCSP/i,
+  /DSBGA/i,
+  /WLBGA/i,
+  /\bCSP-?\d/i,       // CSP-9, CSP-16
+  /\bWLP-?\d/i,       // WLP-4
+  /fcCSP/i,
+  /\bUCSP/i,
+  /MicroSMD/i,
+  /NanoFree/i,
+  /\bLFCSP/i,         // LFCSP (Analog Devices variant)
+];
+
+const WLCSP_KEYWORDS = "WLCSP WL-CSP WCSP WLBGA DSBGA fcCSP UCSP MicroSMD NanoFree FI-WLP CSP WLP";
+
+/**
+ * Infer package alias keywords from package name.
+ * Returns searchable keywords for WLCSP-family packages, or "".
+ */
+export function inferPackageAliases(pkg: string | null): string {
+  if (!pkg) return "";
+  const trimmed = pkg.trim();
+  if (!trimmed || trimmed === "-") return "";
+  for (const re of WLCSP_PATTERNS) {
+    if (re.test(trimmed)) return WLCSP_KEYWORDS;
+  }
+  return "";
+}
+
 /**
  * Build a searchable text string from the attributes JSON blob.
  * Returns space-separated tokens suitable for FTS5 indexing.

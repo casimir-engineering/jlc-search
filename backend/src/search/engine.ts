@@ -1,7 +1,7 @@
 import { getSql } from "../db.ts";
 import {
   buildTsQuery, buildTsOrQuery, buildNegationTsQuery,
-  detectLcscCode, parseQuery, expandAliases, expandAliasesFts, type RangeFilter,
+  detectLcscCode, parseQuery, expandAliases, type RangeFilter,
 } from "./parser.ts";
 import type { PartSummary, SearchParams } from "../types.ts";
 
@@ -214,53 +214,14 @@ export async function search(params: SearchParams): Promise<{ results: PartSumma
 
   // Path 2: Tiered full-text search
   const textQuery = parsed.text;
+  const andQ = buildTsQuery(textQuery, parsed.phrases);
 
-  // Expand single-word package aliases in FTS: "WLCSP" → "(wlcsp:* | wl-csp:* | wcsp:* | wlp:*)"
-  // Multi-word aliases (e.g. "Wafer Level Package") are only used for ILIKE (Tier 1)
-  const tokens = textQuery.trim().split(/\s+/).filter(Boolean);
-  const expandedAndParts: string[] = [];
-  const expandedOrParts: string[] = [];
-  for (const tok of tokens) {
-    const ftsAliases = expandAliasesFts(tok);
-    const tsExprs = ftsAliases
-      .map(a => a.replace(/[&|!():*<>'\\]/g, "").toLowerCase().trim())
-      .filter(Boolean)
-      .map(a => a.length >= 3 ? `${a}:*` : a);
-    const unique = [...new Set(tsExprs)];
-    if (unique.length === 0) {
-      // Fallback to original token
-      const clean = tok.replace(/[&|!():*<>'\\]/g, "").toLowerCase().trim();
-      if (clean) {
-        const expr = clean.length >= 3 ? `${clean}:*` : clean;
-        expandedAndParts.push(expr);
-        expandedOrParts.push(expr);
-      }
-      continue;
-    }
-    if (unique.length === 1) {
-      expandedAndParts.push(unique[0]);
-      expandedOrParts.push(unique[0]);
-    } else {
-      expandedAndParts.push(`(${unique.join(" | ")})`);
-      expandedOrParts.push(...unique);
-    }
-  }
-  // Add phrase constraints
-  for (const phrase of parsed.phrases) {
-    const words = phrase.replace(/[&|!():*<>'\\]/g, "").toLowerCase().trim().split(/\s+/).filter(Boolean);
-    if (words.length > 0) {
-      const pe = `(${words.map(w => w.length >= 3 ? `${w}:*` : w).join(" <-> ")})`;
-      expandedAndParts.push(pe);
-    }
-  }
-
-  const andQ = expandedAndParts.join(" & ") || buildTsQuery(textQuery, parsed.phrases);
   if (!andQ) return { results: [], total: 0 };
 
   const isMultiToken = !params.matchAll && textQuery.includes(" ");
-  const orQ = isMultiToken && expandedOrParts.length > 1
-    ? `(${expandedOrParts.join(" | ")})`
-    : null;
+  const orQ = isMultiToken ? (buildTsOrQuery(textQuery, parsed.phrases) || andQ) : null;
+
+  const tokens = textQuery.trim().split(/\s+/).filter(Boolean);
 
   // Tier limits: how many rows each tier fetches for ranking.
   // Total displayed = deduped union of all tiers, paginated by offset/limit.
@@ -280,7 +241,6 @@ export async function search(params: SearchParams): Promise<{ results: PartSumma
 
     // ── Tier 0.5: OR fallback (partial token matches, lower score) ──
     const tier05Rows: Record<string, unknown>[] = [];
-    const tokens = textQuery.trim().split(/\s+/).filter(Boolean);
 
     if (orQ && tier0Rows.length < TIER0_LIMIT) {
       const t0Lcscs = tier0Rows.map((r) => r.lcsc as string);
