@@ -179,6 +179,68 @@ function parseFilterToken(token: string): RangeFilter | null {
   return null;
 }
 
+// ── Package name aliases (search-time expansion) ─────────────────────
+
+/**
+ * Groups of equivalent package terms. Searching any term also matches the others.
+ * Terms marked with * are "FTS-safe" (specific enough for full-text search).
+ * All terms are used for ILIKE substring matching.
+ *
+ * ftsTerms: single-word terms specific enough for FTS expansion
+ * allTerms: all terms including multi-word and generic ones (for ILIKE)
+ */
+interface AliasGroup {
+  ftsTerms: string[];
+  allTerms: string[];
+}
+
+const PACKAGE_ALIAS_GROUPS: AliasGroup[] = [
+  {
+    // WLCSP family — specific abbreviations for FTS, all variants for ILIKE
+    ftsTerms: ["WLCSP", "WL-CSP", "WCSP", "WLBGA", "DSBGA", "fcCSP", "FI-WLP", "MicroSMD", "UCSP", "NanoFree"],
+    allTerms: ["WLCSP", "WL-CSP", "WCSP", "WLP",
+      "Wafer Level Package", "Wafer-Level Package",
+      "Wafer Level Chip Scale Package", "Wafer-Level Chip-Scale Package",
+      "Wafer Level Chip Scale Packaging", "Wafer-Level Chip Scale Packaging",
+      "Chip Scale Package", "Chip-Scale Package", "CSP",
+      "Die Scale Package", "Die-Scale Package", "DSP",
+      "Wafer Level BGA", "Wafer-Level BGA", "WLBGA",
+      "Bumped Die", "Bare Die with Solder Balls",
+      "Flip Chip CSP", "Flip-Chip CSP", "fcCSP",
+      "Fan-In WLP", "Fan In WLP", "FI-WLP",
+      "Fan-In Wafer Level Package", "Fan In Wafer Level Package",
+      "DSBGA", "MicroSMD", "Micro SMD", "UCSP", "NanoFree"],
+  },
+];
+
+/** Build lookups: lowercased alias → group */
+const FTS_ALIAS_LOOKUP = new Map<string, string[]>();
+const ILIKE_ALIAS_LOOKUP = new Map<string, string[]>();
+for (const group of PACKAGE_ALIAS_GROUPS) {
+  for (const alias of group.allTerms) {
+    FTS_ALIAS_LOOKUP.set(alias.toLowerCase(), group.ftsTerms);
+    ILIKE_ALIAS_LOOKUP.set(alias.toLowerCase(), group.allTerms);
+  }
+}
+
+/**
+ * Expand a token for FTS (specific single-word aliases only).
+ */
+export function expandAliasesFts(token: string): string[] {
+  const group = FTS_ALIAS_LOOKUP.get(token.toLowerCase());
+  if (!group) return [token];
+  return group.map(a => a.toLowerCase());
+}
+
+/**
+ * Expand a token for ILIKE (all aliases including multi-word).
+ */
+export function expandAliases(token: string): string[] {
+  const group = ILIKE_ALIAS_LOOKUP.get(token.toLowerCase());
+  if (!group) return [token];
+  return group.map(a => a.toLowerCase());
+}
+
 export function parseQuery(raw: string): ParsedQuery {
   const phrases: string[] = [];
   const negations: string[] = [];
