@@ -37,8 +37,8 @@ async function main(): Promise<void> {
       const keyHash = await hash;
 
       await sql`
-        INSERT INTO mcp_api_keys (id, key_hash, name, tier)
-        VALUES (${id}, ${keyHash}, ${name}, ${tier})
+        INSERT INTO mcp_api_keys (id, key_hash, key_plaintext, name, tier)
+        VALUES (${id}, ${keyHash}, ${key}, ${name}, ${tier})
       `;
 
       console.log("API key created successfully:");

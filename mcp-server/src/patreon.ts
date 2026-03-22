@@ -110,8 +110,8 @@ async function processWebhookEvent(eventType: string, payload: any): Promise<voi
         const id = crypto.randomUUID();
 
         await sql`
-          INSERT INTO mcp_api_keys (id, key_hash, name, tier, patreon_member_id, patreon_email)
-          VALUES (${id}, ${keyHash}, ${`Patreon: ${email ?? memberId}`}, ${tier}, ${memberId}, ${email ?? null})
+          INSERT INTO mcp_api_keys (id, key_hash, key_plaintext, name, tier, patreon_member_id, patreon_email)
+          VALUES (${id}, ${keyHash}, ${key}, ${`Patreon: ${email ?? memberId}`}, ${tier}, ${memberId}, ${email ?? null})
           ON CONFLICT (key_hash) DO NOTHING
         `;
 
@@ -162,12 +162,14 @@ const PATREON_AUTH_URL = "https://www.patreon.com/oauth2/authorize";
 const PATREON_TOKEN_URL = "https://www.patreon.com/api/oauth2/token";
 const PATREON_IDENTITY_URL = "https://www.patreon.com/api/oauth2/v2/identity";
 
+const MCP_URL = "https://jlcsearch.casimir.engineering/mcp-api/mcp";
+
 export async function handleKeyPage(c: Context): Promise<Response> {
   const clientId = process.env.PATREON_CLIENT_ID;
   const clientSecret = process.env.PATREON_CLIENT_SECRET;
 
   if (!clientId || !clientSecret) {
-    return c.html(renderPage("Configuration Error", "Patreon OAuth is not configured on this server."));
+    return c.html(renderPage("Configuration Error", "<p>Patreon OAuth is not configured on this server.</p>"));
   }
 
   const url = new URL(c.req.url);
@@ -188,6 +190,7 @@ export async function handleKeyPage(c: Context): Promise<Response> {
     authUrl.searchParams.set("scope", "identity identity[email]");
     return c.redirect(authUrl.toString());
   }
+
   const tokenResp = await fetch(PATREON_TOKEN_URL, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -201,7 +204,7 @@ export async function handleKeyPage(c: Context): Promise<Response> {
   });
 
   if (!tokenResp.ok) {
-    return c.html(renderPage("OAuth Error", "Failed to exchange authorization code. Please try again."));
+    return c.html(renderPage("OAuth Error", "<p>Failed to exchange authorization code. Please try again.</p>"));
   }
 
   const tokenData = (await tokenResp.json()) as { access_token: string };
@@ -217,7 +220,7 @@ export async function handleKeyPage(c: Context): Promise<Response> {
   });
 
   if (!identityResp.ok) {
-    return c.html(renderPage("Identity Error", "Failed to fetch your Patreon identity."));
+    return c.html(renderPage("Identity Error", "<p>Failed to fetch your Patreon identity.</p>"));
   }
 
   const identity = (await identityResp.json()) as any;
@@ -242,13 +245,13 @@ export async function handleKeyPage(c: Context): Promise<Response> {
   const lookupId = memberId ?? patreonUserId;
 
   if (!lookupId) {
-    return c.html(renderPage("Error", "Could not determine your Patreon membership."));
+    return c.html(renderPage("Error", "<p>Could not determine your Patreon membership.</p>"));
   }
 
   // Look up existing key
   const sql = getSql();
   const rows = await sql`
-    SELECT id, key_hash, tier, is_active FROM mcp_api_keys
+    SELECT id, key_hash, key_plaintext, tier, is_active FROM mcp_api_keys
     WHERE patreon_member_id = ${lookupId}
     ORDER BY created_at DESC
     LIMIT 1
@@ -256,38 +259,153 @@ export async function handleKeyPage(c: Context): Promise<Response> {
 
   if (rows.length === 0) {
     return c.html(renderPage(
-      `Hello, ${fullName}`,
-      "No API key found for your account. Make sure you are an active patron, then check back shortly after your membership is processed."
+      `Hello, ${escHtml(fullName)}`,
+      "<p>No API key found for your account. Make sure you are an active patron, then check back shortly after your membership is processed.</p>"
     ));
   }
 
   const row = rows[0];
   if (!row.is_active) {
     return c.html(renderPage(
-      `Hello, ${fullName}`,
-      "Your API key has been deactivated. Please ensure your Patreon membership is active."
+      `Hello, ${escHtml(fullName)}`,
+      "<p>Your API key has been deactivated. Please ensure your Patreon membership is active.</p>"
     ));
   }
 
-  // We cannot show the original key (we only store the hash).
-  // Generate a new key, update the hash, and show it once.
-  const { key: newKey, hash: newHashPromise } = generateApiKey();
-  const newHash = await newHashPromise;
+  // Read key_plaintext if available; otherwise generate a new one and persist both hash + plaintext
+  let apiKey: string;
+  if (row.key_plaintext) {
+    apiKey = row.key_plaintext;
+  } else {
+    const { key: newKey, hash: newHashPromise } = generateApiKey();
+    const newHash = await newHashPromise;
+    await sql`
+      UPDATE mcp_api_keys SET key_hash = ${newHash}, key_plaintext = ${newKey}
+      WHERE id = ${row.id}
+    `;
+    apiKey = newKey;
+  }
 
-  await sql`
-    UPDATE mcp_api_keys SET key_hash = ${newHash}
-    WHERE id = ${row.id}
-  `;
+  const tier: string = row.tier ?? "hobbyist";
+  const safeName = escHtml(fullName);
 
-  return c.html(renderPage(
-    `Hello, ${fullName}`,
-    `<p>Your API key (tier: <strong>${row.tier}</strong>):</p>
-    <pre style="background:#1a1a2e;color:#0f0;padding:16px;border-radius:8px;font-size:16px;user-select:all">${newKey}</pre>
-    <p><strong>Save this key now.</strong> It will not be shown again.</p>
-    <h3>Usage</h3>
-    <p>Add this header to your MCP client requests:</p>
-    <pre style="background:#1a1a2e;color:#eee;padding:12px;border-radius:8px">Authorization: Bearer ${newKey}</pre>`
-  ));
+  const tierColors: Record<string, string> = {
+    hobbyist: "#4a9eff",
+    engineer: "#f5a623",
+    addict: "#a855f7",
+  };
+  const tierColor = tierColors[tier] ?? "#4a9eff";
+
+  const body = `
+  <div class="greeting">
+    <h2>Hello, ${safeName}</h2>
+    <span class="tier-badge" style="background:${tierColor}">${escHtml(tier)}</span>
+  </div>
+
+  <div class="key-section">
+    <label class="section-label">Your API Key</label>
+    <div class="key-box">
+      <code id="api-key">${escHtml(apiKey)}</code>
+      <button class="copy-btn" onclick="copyKey()">Copy</button>
+    </div>
+  </div>
+
+  <div class="setup-section">
+    <label class="section-label" for="guide-select">Setup Guide</label>
+    <select id="guide-select" class="guide-dropdown" onchange="showGuide(this.value)">
+      <option value="claude-desktop">Claude Desktop</option>
+      <option value="claude-code">Claude Code</option>
+      <option value="codex-cli">Codex CLI</option>
+      <option value="generic">Generic / Other AI</option>
+    </select>
+
+    <div id="guide-claude-desktop" class="guide-content active">
+      <p>Add to your Claude Desktop config file (<code>~/.claude/claude_desktop_config.json</code> on macOS/Linux, or <code>%APPDATA%\\Claude\\claude_desktop_config.json</code> on Windows):</p>
+      <pre class="config-block"><code>{
+  "mcpServers": {
+    "jlc-search": {
+      "url": "${MCP_URL}",
+      "headers": {
+        "Authorization": "Bearer ${escHtml(apiKey)}"
+      }
+    }
+  }
+}</code></pre>
+    </div>
+
+    <div id="guide-claude-code" class="guide-content">
+      <p>Add to <code>.claude/settings.json</code> in your project or home directory:</p>
+      <pre class="config-block"><code>{
+  "mcpServers": {
+    "jlc-search": {
+      "url": "${MCP_URL}",
+      "headers": {
+        "Authorization": "Bearer ${escHtml(apiKey)}"
+      }
+    }
+  }
+}</code></pre>
+      <p>Or run:</p>
+      <pre class="config-block"><code>claude mcp add jlc-search --url ${MCP_URL}</code></pre>
+    </div>
+
+    <div id="guide-codex-cli" class="guide-content">
+      <p>Give Codex this prompt:</p>
+      <pre class="config-block"><code>I have access to a JLCsearch MCP server for electronic component search.
+URL: ${MCP_URL}
+Authorization: Bearer ${escHtml(apiKey)}
+Use tools: search_parts, get_part, list_categories, compare_parts</code></pre>
+    </div>
+
+    <div id="guide-generic" class="guide-content">
+      <p>Give this prompt to your AI:</p>
+      <pre class="config-block"><code>I have access to a JLCsearch MCP server at ${MCP_URL}
+with API key: ${escHtml(apiKey)} (send as Authorization: Bearer header).
+
+Available tools:
+- search_parts: Search 3.5M+ electronic components with filters
+- get_part: Get full details for a part by LCSC code
+- list_categories: Browse component categories
+- compare_parts: Compare up to 10 parts side by side
+
+Configure the MCP server and use it to help me find electronic components.</code></pre>
+    </div>
+  </div>
+
+  <details class="endpoints-section">
+    <summary>MCP Endpoints</summary>
+    <pre class="config-block"><code>POST /mcp-api/mcp         \u2014 MCP protocol endpoint
+GET  /mcp-api/health       \u2014 Health check
+GET  /mcp-api/key          \u2014 This page (get your API key)
+
+Tools: search_parts, get_part, list_categories, compare_parts</code></pre>
+  </details>
+
+  <script>
+    function copyKey() {
+      const key = document.getElementById('api-key').textContent;
+      navigator.clipboard.writeText(key).then(function() {
+        const btn = document.querySelector('.copy-btn');
+        btn.textContent = 'Copied!';
+        setTimeout(function() { btn.textContent = 'Copy'; }, 2000);
+      });
+    }
+
+    function showGuide(value) {
+      var guides = document.querySelectorAll('.guide-content');
+      for (var i = 0; i < guides.length; i++) {
+        guides[i].classList.remove('active');
+      }
+      var el = document.getElementById('guide-' + value);
+      if (el) el.classList.add('active');
+    }
+  </script>`;
+
+  return c.html(renderPage(`jlc-search MCP`, body));
+}
+
+function escHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
 function renderPage(title: string, body: string): string {
@@ -296,16 +414,158 @@ function renderPage(title: string, body: string): string {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${title} — jlc-search MCP</title>
+  <title>${title}</title>
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 600px; margin: 60px auto; padding: 0 20px; background: #0d0d1a; color: #e0e0e0; }
-    h1 { color: #7eb8ff; }
-    pre { overflow-x: auto; }
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 680px;
+      margin: 48px auto;
+      padding: 0 24px;
+      background: #0d0d1a;
+      color: #e0e0e0;
+      line-height: 1.6;
+    }
     a { color: #7eb8ff; }
+    code { font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace; }
+
+    /* Greeting */
+    .greeting {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 32px;
+    }
+    .greeting h2 {
+      color: #7eb8ff;
+      margin: 0;
+      font-size: 1.6rem;
+    }
+    .tier-badge {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 3px 10px;
+      border-radius: 999px;
+      color: #fff;
+      white-space: nowrap;
+    }
+
+    /* Section labels */
+    .section-label {
+      display: block;
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #888;
+      margin-bottom: 8px;
+    }
+
+    /* Key box */
+    .key-section { margin-bottom: 32px; }
+    .key-box {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: #1a1a2e;
+      border: 1px solid #2a2a4a;
+      border-radius: 8px;
+      padding: 14px 16px;
+    }
+    .key-box code {
+      flex: 1;
+      color: #0f0;
+      font-size: 1.05rem;
+      word-break: break-all;
+      user-select: all;
+    }
+    .copy-btn {
+      background: #2a2a4a;
+      color: #7eb8ff;
+      border: 1px solid #3a3a5a;
+      border-radius: 6px;
+      padding: 6px 14px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.15s;
+    }
+    .copy-btn:hover { background: #3a3a5a; }
+
+    /* Setup guide */
+    .setup-section { margin-bottom: 32px; }
+    .guide-dropdown {
+      display: block;
+      width: 100%;
+      padding: 10px 14px;
+      font-size: 0.95rem;
+      background: #1a1a2e;
+      color: #e0e0e0;
+      border: 1px solid #2a2a4a;
+      border-radius: 8px;
+      appearance: none;
+      -webkit-appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%237eb8ff' d='M1 1l5 5 5-5'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 14px center;
+      cursor: pointer;
+      margin-bottom: 16px;
+    }
+    .guide-dropdown:focus { outline: 2px solid #7eb8ff; outline-offset: 1px; }
+
+    .guide-content { display: none; }
+    .guide-content.active { display: block; }
+    .guide-content p { margin: 0 0 10px 0; font-size: 0.92rem; }
+    .guide-content p code {
+      background: #1a1a2e;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 0.85rem;
+    }
+
+    /* Config code blocks */
+    .config-block {
+      background: #1a1a2e;
+      border: 1px solid #2a2a4a;
+      border-radius: 8px;
+      padding: 14px 16px;
+      overflow-x: auto;
+      margin: 0 0 12px 0;
+    }
+    .config-block code {
+      color: #e0e0e0;
+      font-size: 0.85rem;
+      white-space: pre;
+    }
+
+    /* Endpoints collapsible */
+    .endpoints-section {
+      margin-top: 24px;
+      border: 1px solid #2a2a4a;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .endpoints-section summary {
+      padding: 12px 16px;
+      background: #1a1a2e;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 0.92rem;
+      color: #7eb8ff;
+      user-select: none;
+    }
+    .endpoints-section summary:hover { background: #22223a; }
+    .endpoints-section .config-block {
+      border: none;
+      border-radius: 0;
+      margin: 0;
+    }
   </style>
 </head>
 <body>
-  <h1>${title}</h1>
   ${body}
 </body>
 </html>`;

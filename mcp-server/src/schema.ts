@@ -16,6 +16,14 @@ export async function applyMcpSchema(sql: Sql): Promise<void> {
     )
   `;
 
+  // Add key_plaintext column for showing key on /key page
+  await sql`
+    DO $$ BEGIN
+      ALTER TABLE mcp_api_keys ADD COLUMN key_plaintext TEXT;
+    EXCEPTION WHEN duplicate_column THEN NULL;
+    END $$
+  `;
+
   await sql`
     CREATE TABLE IF NOT EXISTS mcp_usage_log (
       id BIGSERIAL PRIMARY KEY,
