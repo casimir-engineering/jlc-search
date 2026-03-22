@@ -34,23 +34,16 @@ export function useSearch() {
     setPage(0);
   }, []);
 
-  // Sync query to URL
+  // Track last query that was pushed to history to avoid duplicates
+  const lastPushedQ = useRef<string>(getUrlParam("q"));
+
+  // Sync query to URL (replaceState only — pushState happens when search completes)
   useEffect(() => {
     const url = new URL(window.location.href);
-    const currentQ = url.searchParams.get("q") ?? "";
-
-    if (query) {
-      url.searchParams.set("q", query);
-    } else {
-      url.searchParams.delete("q");
-    }
-
+    if (query) url.searchParams.set("q", query);
+    else url.searchParams.delete("q");
     const newUrl = url.toString();
-    if (newUrl === window.location.href) return;
-
-    if (query && query !== currentQ) {
-      window.history.pushState(null, "", newUrl);
-    } else {
+    if (newUrl !== window.location.href) {
       window.history.replaceState(null, "", newUrl);
     }
   }, [query]);
@@ -60,6 +53,7 @@ export function useSearch() {
     function handlePopState() {
       const params = new URLSearchParams(window.location.search);
       const q = params.get("q") ?? "";
+      lastPushedQ.current = q; // prevent re-pushing this query
       setQuery(q);
       setPage(0);
     }
@@ -102,6 +96,14 @@ export function useSearch() {
           setTotal(data.total);
           setTookMs(data.took_ms);
           setLoading(false);
+
+          // Push history entry when a search completes with a new query
+          if (trimmed !== lastPushedQ.current) {
+            const url = new URL(window.location.href);
+            url.searchParams.set("q", trimmed);
+            window.history.pushState(null, "", url.toString());
+            lastPushedQ.current = trimmed;
+          }
         })
         .catch((err: unknown) => {
           if (err instanceof Error && err.name === "AbortError") return;
