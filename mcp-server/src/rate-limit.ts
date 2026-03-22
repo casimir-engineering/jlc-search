@@ -3,7 +3,7 @@ import { getSql } from "./db.ts";
 /** Daily call limits per tier. */
 const DAILY_LIMITS: Record<string, number> = {
   hobbyist: 50,
-  designer: 250,
+  engineer: 250,
   addict: 1500,
 };
 

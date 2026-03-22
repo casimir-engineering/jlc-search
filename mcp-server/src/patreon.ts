@@ -21,12 +21,12 @@ export function generateApiKey(): { key: string; hash: Promise<string> } {
 
 function mapPatreonTier(entitledTierIds: string[]): string {
   const tierAddict = process.env.PATREON_TIER_ADDICT;
-  const tierDesigner = process.env.PATREON_TIER_DESIGNER;
+  const tierEngineer = process.env.PATREON_TIER_ENGINEER;
   const tierHobbyist = process.env.PATREON_TIER_HOBBYIST;
 
   // Check highest tier first
   if (tierAddict && entitledTierIds.includes(tierAddict)) return "addict";
-  if (tierDesigner && entitledTierIds.includes(tierDesigner)) return "designer";
+  if (tierEngineer && entitledTierIds.includes(tierEngineer)) return "engineer";
   if (tierHobbyist && entitledTierIds.includes(tierHobbyist)) return "hobbyist";
   return "hobbyist";
 }
@@ -173,9 +173,14 @@ export async function handleKeyPage(c: Context): Promise<Response> {
   const url = new URL(c.req.url);
   const code = url.searchParams.get("code");
 
+  // Build the public-facing redirect URI (respects X-Forwarded-Proto from proxy)
+  const proto = c.req.header("X-Forwarded-Proto") ?? url.protocol.replace(":", "");
+  const host = c.req.header("X-Forwarded-Host") ?? c.req.header("Host") ?? url.host;
+  const publicBase = `${proto}://${host}`;
+  const redirectUri = `${publicBase}/mcp-api/key`;
+
   // No code — redirect to Patreon OAuth
   if (!code) {
-    const redirectUri = `${url.origin}/key`;
     const authUrl = new URL(PATREON_AUTH_URL);
     authUrl.searchParams.set("response_type", "code");
     authUrl.searchParams.set("client_id", clientId);
@@ -183,9 +188,6 @@ export async function handleKeyPage(c: Context): Promise<Response> {
     authUrl.searchParams.set("scope", "identity identity[email]");
     return c.redirect(authUrl.toString());
   }
-
-  // Exchange code for access token
-  const redirectUri = `${url.origin}/key`;
   const tokenResp = await fetch(PATREON_TOKEN_URL, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
