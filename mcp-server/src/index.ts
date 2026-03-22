@@ -151,14 +151,14 @@ app.post("/mcp", async (c) => {
   return response ?? c.text("", 204);
 });
 
-// Handle GET for SSE (not used in stateless mode, but return proper error)
+// Handle GET for SSE (stateless mode — no streaming sessions)
 app.get("/mcp", (c) =>
-  c.json({ error: "SSE not supported in stateless mode" }, 405)
+  c.json({ jsonrpc: "2.0", error: { code: -32000, message: "Method not allowed. Use POST." }, id: null }, 405)
 );
 
-// Handle DELETE for session termination (not used in stateless mode)
+// Handle DELETE for session termination (stateless mode)
 app.delete("/mcp", (c) =>
-  c.json({ error: "Sessions not supported in stateless mode" }, 405)
+  c.json({ jsonrpc: "2.0", error: { code: -32000, message: "Sessions not supported in stateless mode" }, id: null }, 405)
 );
 
 // ── Graceful shutdown ───────────────────────────────────────────────

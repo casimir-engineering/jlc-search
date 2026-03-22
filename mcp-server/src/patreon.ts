@@ -316,10 +316,10 @@ export async function handleKeyPage(c: Context): Promise<Response> {
       <option value="claude-desktop">Claude Desktop</option>
       <option value="claude-code">Claude Code</option>
       <option value="codex-cli">Codex CLI</option>
-      <option value="generic">Generic / Other AI</option>
+      <option value="generic" selected>Generic / Other AI</option>
     </select>
 
-    <div id="guide-claude-desktop" class="guide-content active">
+    <div id="guide-claude-desktop" class="guide-content">
       <p>Add to your Claude Desktop config file:</p>
       <ul style="font-size:0.85em;color:#aaa;margin:4px 0 12px 18px">
         <li><b>macOS</b>: <code>~/Library/Application Support/Claude/claude_desktop_config.json</code></li>
@@ -368,7 +368,7 @@ bearer_token_env_var = "JLCSEARCH_API_KEY"</code></pre>
       <p style="font-size: 0.85em; color: #aaa;">Then manually add <code>bearer_token_env_var = "JLCSEARCH_API_KEY"</code> to the <code>[mcp_servers.jlc-search]</code> section in your config.toml.</p>
     </div>
 
-    <div id="guide-generic" class="guide-content">
+    <div id="guide-generic" class="guide-content active">
       <p>Give this prompt to your AI:</p>
       <pre class="config-block"><code>I have access to a JLCsearch MCP server at ${MCP_URL}
 with API key: ${escHtml(apiKey)} (send as Authorization: Bearer header).
