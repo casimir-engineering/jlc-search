@@ -10,11 +10,11 @@ services:
       - pg_data:/var/lib/postgresql/data
     command: >
       postgres
-      -c shared_buffers=1536MB
-      -c work_mem=16MB
+      -c shared_buffers=2GB
+      -c work_mem=32MB
       -c jit=off
       -c random_page_cost=1.1
-      -c effective_cache_size=2500MB
+      -c effective_cache_size=5GB
       -c effective_io_concurrency=200
       -c huge_pages=try
     restart: unless-stopped
