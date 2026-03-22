@@ -20,14 +20,15 @@ export function generateApiKey(): { key: string; hash: Promise<string> } {
 // ── Tier mapping ─────────────────────────────────────────────────────
 
 function mapPatreonTier(entitledTierIds: string[]): string {
-  const tierEnterprise = process.env.PATREON_TIER_ENTERPRISE;
-  const tierPro = process.env.PATREON_TIER_PRO;
-  const tierFree = process.env.PATREON_TIER_FREE;
+  const tierAddict = process.env.PATREON_TIER_ADDICT;
+  const tierDesigner = process.env.PATREON_TIER_DESIGNER;
+  const tierHobbyist = process.env.PATREON_TIER_HOBBYIST;
 
-  if (tierEnterprise && entitledTierIds.includes(tierEnterprise)) return "enterprise";
-  if (tierPro && entitledTierIds.includes(tierPro)) return "pro";
-  if (tierFree && entitledTierIds.includes(tierFree)) return "free";
-  return "free";
+  // Check highest tier first
+  if (tierAddict && entitledTierIds.includes(tierAddict)) return "addict";
+  if (tierDesigner && entitledTierIds.includes(tierDesigner)) return "designer";
+  if (tierHobbyist && entitledTierIds.includes(tierHobbyist)) return "hobbyist";
+  return "hobbyist";
 }
 
 // ── Webhook signature verification ───────────────────────────────────

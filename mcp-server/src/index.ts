@@ -11,6 +11,7 @@ import { register as registerCompareParts } from "./tools/compare-parts.ts";
 import { authMiddleware } from "./auth.ts";
 import { handlePatreonWebhook, handleKeyPage } from "./patreon.ts";
 import { logUsage } from "./usage.ts";
+import { checkDailyLimit } from "./rate-limit.ts";
 import { closeDb } from "./db.ts";
 
 const MCP_PORT = parseInt(process.env.MCP_PORT ?? "3002", 10);
@@ -109,20 +110,45 @@ app.get("/key", handleKeyPage);
 // MCP endpoint — stateless: new server + transport per request
 app.post("/mcp", async (c) => {
   const apiKey = c.get("apiKey") as { id: string; tier: string; name: string } | undefined;
-  const server = createMcpServer(apiKey?.id);
+
+  // Check daily rate limit for authenticated requests that are tool calls
+  if (apiKey) {
+    const body = await c.req.json();
+
+    if (body?.method === "tools/call") {
+      const { allowed, remaining, limit } = await checkDailyLimit(apiKey.id, apiKey.tier);
+      if (!allowed) {
+        return c.json({
+          jsonrpc: "2.0",
+          id: body.id ?? null,
+          error: {
+            code: -32000,
+            message: `Daily limit reached (${limit} calls/day for ${apiKey.tier} tier). Resets at midnight UTC.`,
+          },
+        }, 429);
+      }
+      c.header("X-RateLimit-Remaining", String(remaining));
+      c.header("X-RateLimit-Limit", String(limit));
+    }
+
+    const server = createMcpServer(apiKey.id);
+    const transport = new WebStandardStreamableHTTPServerTransport({
+      sessionIdGenerator: undefined,
+    });
+    await server.connect(transport);
+    const response = await transport.handleRequest(c.req.raw, { parsedBody: body });
+    return response ?? c.text("", 204);
+  }
+
+  // Unauthenticated (auth disabled) — no rate limiting
+  const server = createMcpServer();
   const transport = new WebStandardStreamableHTTPServerTransport({
-    sessionIdGenerator: undefined, // stateless
+    sessionIdGenerator: undefined,
   });
-
   await server.connect(transport);
-
   const body = await c.req.json();
   const response = await transport.handleRequest(c.req.raw, { parsedBody: body });
-
-  if (response) {
-    return response;
-  }
-  return c.text("", 204);
+  return response ?? c.text("", 204);
 });
 
 // Handle GET for SSE (not used in stateless mode, but return proper error)

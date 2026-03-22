@@ -7,7 +7,7 @@ export async function applyMcpSchema(sql: Sql): Promise<void> {
       id TEXT PRIMARY KEY,
       key_hash TEXT NOT NULL UNIQUE,
       name TEXT NOT NULL,
-      tier TEXT NOT NULL DEFAULT 'free',
+      tier TEXT NOT NULL DEFAULT 'hobbyist',
       patreon_member_id TEXT,
       patreon_email TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

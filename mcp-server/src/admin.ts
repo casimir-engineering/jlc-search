@@ -3,7 +3,7 @@
  * CLI for MCP API key management.
  *
  * Usage:
- *   bun run mcp-server/src/admin.ts create --name "My Key" [--tier free]
+ *   bun run mcp-server/src/admin.ts create --name "My Key" [--tier hobbyist]
  *   bun run mcp-server/src/admin.ts list
  *   bun run mcp-server/src/admin.ts revoke --id <key-id>
  */
@@ -28,10 +28,10 @@ async function main(): Promise<void> {
     case "create": {
       const name = getArg("--name");
       if (!name) {
-        console.error("Usage: admin.ts create --name \"My Key\" [--tier free]");
+        console.error("Usage: admin.ts create --name \"My Key\" [--tier hobbyist]");
         process.exit(1);
       }
-      const tier = getArg("--tier") ?? "free";
+      const tier = getArg("--tier") ?? "hobbyist";
       const id = crypto.randomUUID();
       const { key, hash } = generateApiKey();
       const keyHash = await hash;
@@ -97,7 +97,7 @@ async function main(): Promise<void> {
       console.error("Usage: admin.ts <create|list|revoke> [options]");
       console.error("");
       console.error("Commands:");
-      console.error("  create --name \"My Key\" [--tier free]   Create a new API key");
+      console.error("  create --name \"My Key\" [--tier hobbyist]   Create a new API key");
       console.error("  list                                   List all API keys");
       console.error("  revoke --id <key-id>                   Revoke an API key");
       process.exit(1);
