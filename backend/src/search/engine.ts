@@ -371,15 +371,32 @@ export async function search(params: SearchParams): Promise<{ results: PartSumma
       })),
     ];
 
-    // Count categories from all tier results (before pagination) for faceted filtering
-    const catCounts = new Map<string, number>();
-    for (const r of results) {
-      const cat = r.category;
-      catCounts.set(cat, (catCounts.get(cat) ?? 0) + 1);
+    // Count categories for faceted filtering.
+    // When category filters are active, run a separate count query WITHOUT the
+    // category filter, so the dropdown always shows all text-matching categories.
+    let categories: { name: string; count: number }[];
+    if (params.categories.length > 0) {
+      const facetRows = await sql`
+        SELECT p.category AS name, COUNT(*)::int AS count
+        FROM (
+          SELECT p.category FROM parts p
+          WHERE p.search_vec @@ to_tsquery('simple', ${orQ ?? andQ})
+          ${rangeFilter} ${colFilter} ${typeFilter} ${economicFilter} ${stockFilter} ${negFilter}
+          LIMIT ${TIER0_LIMIT}
+        ) p
+        GROUP BY p.category
+        ORDER BY count DESC
+      `;
+      categories = facetRows.map((r) => ({ name: r.name as string, count: r.count as number }));
+    } else {
+      const catCounts = new Map<string, number>();
+      for (const r of results) {
+        catCounts.set(r.category, (catCounts.get(r.category) ?? 0) + 1);
+      }
+      categories = [...catCounts.entries()]
+        .map(([name, count]) => ({ name, count }))
+        .sort((a, b) => b.count - a.count);
     }
-    const categories = [...catCounts.entries()]
-      .map(([name, count]) => ({ name, count }))
-      .sort((a, b) => b.count - a.count);
 
     // Fast total estimate using EXPLAIN (avoids slow COUNT(*) on broad queries)
     // Use OR query for estimate if available (broader match = better total), else AND
