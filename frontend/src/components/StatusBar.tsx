@@ -35,7 +35,9 @@ export function StatusBar() {
         {status.total_parts > 0
           ? `${status.total_parts.toLocaleString()} parts`
           : "No parts in database — run ingest first"}
-        {" · "}
+      </span>
+      <span className="footer-center">
+        By{" "}
         <a href="https://casimir.engineering" target="_blank" rel="noopener noreferrer" className="footer-credit">
           <img src="https://casimir.engineering/casimir-eng-logo.svg" alt="Casimir Engineering" className="footer-logo" />
           Casimir Engineering

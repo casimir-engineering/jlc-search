@@ -782,6 +782,7 @@ mark { background: #fff3cd; padding: 0 1px; border-radius: 2px; }
   align-items: center;
 }
 
+.footer-center { text-align: center; }
 .footer-credit { color: #aaa; text-decoration: none; }
 .footer-credit:hover { color: #0066cc; }
 .footer-logo { height: 14px; width: auto; opacity: 0.6; vertical-align: -2px; margin-right: 3px; }
