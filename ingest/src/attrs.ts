@@ -437,17 +437,224 @@ const RISCV_MPN_PATTERNS: RegExp[] = [
 
 const RISCV_KEYWORDS = "RISC-V RISCV risc-v riscv risc-5 risc5";
 
+// ── ARM Cortex MPN patterns ─────────────────────────────────────────
+
+const ARM_BASE = "ARM arm Cortex cortex";
+
+/** MPN patterns → ARM keywords string (base + specific core) */
+const ARM_MPN_RULES: [RegExp, string][] = [
+  // ── Cortex-M0 ──
+  [/^STM32F0/i, `${ARM_BASE} Cortex-M0 cortex-m0`],
+  [/^STM32L0/i, `${ARM_BASE} Cortex-M0+ cortex-m0+`],
+  [/^STM32G0/i, `${ARM_BASE} Cortex-M0+ cortex-m0+`],
+  [/^STM32C0/i, `${ARM_BASE} Cortex-M0+ cortex-m0+`],
+  [/^STM32U0/i, `${ARM_BASE} Cortex-M0+ cortex-m0+`],
+  [/^GD32F1[3-9]0/i, `${ARM_BASE} Cortex-M3 cortex-m3`],  // GD32F130/150/170/190 are M3
+  [/^GD32E23/i, `${ARM_BASE} Cortex-M23 cortex-m23`],
+  [/^LPC8/i, `${ARM_BASE} Cortex-M0+ cortex-m0+`],
+  [/^LPC11/i, `${ARM_BASE} Cortex-M0 cortex-m0`],
+  [/^LPC12/i, `${ARM_BASE} Cortex-M0 cortex-m0`],
+  [/^NRF51/i, `${ARM_BASE} Cortex-M0 cortex-m0`],
+  [/^CY8C4/i, `${ARM_BASE} Cortex-M0+ cortex-m0+`],
+  [/^XMC1/i, `${ARM_BASE} Cortex-M0 cortex-m0`],
+  [/^EFM32ZG/i, `${ARM_BASE} Cortex-M0+ cortex-m0+`],
+  [/^EFM32HG/i, `${ARM_BASE} Cortex-M0+ cortex-m0+`],
+  [/^MKL/i, `${ARM_BASE} Cortex-M0+ cortex-m0+`],
+  [/^MKE0[0-4]Z/i, `${ARM_BASE} Cortex-M0+ cortex-m0+`],
+  [/^S9KEAZ/i, `${ARM_BASE} Cortex-M0+ cortex-m0+`],
+  [/^MSPM0/i, `${ARM_BASE} Cortex-M0+ cortex-m0+`],
+  [/^RP2040/i, `${ARM_BASE} Cortex-M0+ cortex-m0+`],
+  [/^PY32F0/i, `${ARM_BASE} Cortex-M0+ cortex-m0+`],
+  [/^PY32T0/i, `${ARM_BASE} Cortex-M0+ cortex-m0+`],
+  [/^APM32F0/i, `${ARM_BASE} Cortex-M0+ cortex-m0+`],
+  [/^HK32F0/i, `${ARM_BASE} Cortex-M0 cortex-m0`],
+  [/^MM32[FLS]0/i, `${ARM_BASE} Cortex-M0 cortex-m0`],
+  [/^MM32G0/i, `${ARM_BASE} Cortex-M0 cortex-m0`],
+  [/^N32G0/i, `${ARM_BASE} Cortex-M0 cortex-m0`],
+  [/^HC32[FL]0/i, `${ARM_BASE} Cortex-M0+ cortex-m0+`],
+  [/^HC32L1/i, `${ARM_BASE} Cortex-M0+ cortex-m0+`],
+  [/^CW32[FL]0/i, `${ARM_BASE} Cortex-M0+ cortex-m0+`],
+  [/^XL32/i, `${ARM_BASE} Cortex-M0+ cortex-m0+`],
+  [/^FM33/i, `${ARM_BASE} Cortex-M0 cortex-m0`],
+  [/^LKS32MC0/i, `${ARM_BASE} Cortex-M0 cortex-m0`],
+  [/^AIR001/i, `${ARM_BASE} Cortex-M0+ cortex-m0+`],
+  [/^CC2340/i, `${ARM_BASE} Cortex-M0+ cortex-m0+`],
+  [/^ATSAMD/i, `${ARM_BASE} Cortex-M0+ cortex-m0+`],
+  [/^ATSAMC/i, `${ARM_BASE} Cortex-M0+ cortex-m0+`],
+  [/^ATSAML/i, `${ARM_BASE} Cortex-M0+ cortex-m0+`],
+  [/^SN32/i, `${ARM_BASE} Cortex-M0 cortex-m0`],
+  [/^HT32F/i, `${ARM_BASE} Cortex-M0+ cortex-m0+`],
+  [/^R7FS1/i, `${ARM_BASE} Cortex-M0+ cortex-m0+`],
+
+  // ── Cortex-M3 ──
+  [/^STM32F1/i, `${ARM_BASE} Cortex-M3 cortex-m3`],
+  [/^STM32F2/i, `${ARM_BASE} Cortex-M3 cortex-m3`],
+  [/^STM32L1/i, `${ARM_BASE} Cortex-M3 cortex-m3`],
+  [/^GD32F10/i, `${ARM_BASE} Cortex-M3 cortex-m3`],
+  [/^GD32F20/i, `${ARM_BASE} Cortex-M3 cortex-m3`],
+  [/^GD32F30/i, `${ARM_BASE} Cortex-M3 cortex-m3`],
+  [/^GD32E10/i, `${ARM_BASE} Cortex-M3 cortex-m3`],
+  [/^GD32E50/i, `${ARM_BASE} Cortex-M3 cortex-m3`],
+  [/^LPC13/i, `${ARM_BASE} Cortex-M3 cortex-m3`],
+  [/^LPC15/i, `${ARM_BASE} Cortex-M3 cortex-m3`],
+  [/^LPC17/i, `${ARM_BASE} Cortex-M3 cortex-m3`],
+  [/^LPC18/i, `${ARM_BASE} Cortex-M3 cortex-m3`],
+  [/^EFM32GG/i, `${ARM_BASE} Cortex-M3 cortex-m3`],
+  [/^EFM32LG/i, `${ARM_BASE} Cortex-M3 cortex-m3`],
+  [/^EFM32WG/i, `${ARM_BASE} Cortex-M4F cortex-m4`],
+  [/^EFM32TG/i, `${ARM_BASE} Cortex-M3 cortex-m3`],
+  [/^EFM32JG/i, `${ARM_BASE} Cortex-M3 cortex-m3`],
+  [/^EFM32G[0-9]/i, `${ARM_BASE} Cortex-M3 cortex-m3`],
+  [/^AT32F403/i, `${ARM_BASE} Cortex-M4 cortex-m4`],
+  [/^AT32F413/i, `${ARM_BASE} Cortex-M4 cortex-m4`],
+  [/^AT32F4[0-9]/i, `${ARM_BASE} Cortex-M4 cortex-m4`],
+  [/^AT32L0/i, `${ARM_BASE} Cortex-M0+ cortex-m0+`],
+  [/^AT32WB/i, `${ARM_BASE} Cortex-M4 cortex-m4`],
+  [/^APM32F1/i, `${ARM_BASE} Cortex-M3 cortex-m3`],
+  [/^APM32E1/i, `${ARM_BASE} Cortex-M3 cortex-m3`],
+  [/^CKS32F1/i, `${ARM_BASE} Cortex-M3 cortex-m3`],
+  [/^CKS32F4/i, `${ARM_BASE} Cortex-M4 cortex-m4`],
+  [/^HK32F1/i, `${ARM_BASE} Cortex-M3 cortex-m3`],
+  [/^MM32F1/i, `${ARM_BASE} Cortex-M3 cortex-m3`],
+  [/^Air32F/i, `${ARM_BASE} Cortex-M3 cortex-m3`],
+  [/^CH32F/i, `${ARM_BASE} Cortex-M3 cortex-m3`],
+  [/^NUC1/i, `${ARM_BASE} Cortex-M0 cortex-m0`],
+  [/^NUC4/i, `${ARM_BASE} Cortex-M4 cortex-m4`],
+  [/^N32G4/i, `${ARM_BASE} Cortex-M4 cortex-m4`],
+  [/^N32WB/i, `${ARM_BASE} Cortex-M4 cortex-m4`],
+  [/^N32H4/i, `${ARM_BASE} Cortex-M4 cortex-m4`],
+  [/^SWM[1-2]/i, `${ARM_BASE} Cortex-M0 cortex-m0`],
+  [/^SWM3/i, `${ARM_BASE} Cortex-M4 cortex-m4`],
+  [/^CY8C5/i, `${ARM_BASE} Cortex-M3 cortex-m3`],
+  [/^LM3S/i, `${ARM_BASE} Cortex-M3 cortex-m3`],
+  [/^ADUCM3/i, `${ARM_BASE} Cortex-M3 cortex-m3`],
+  [/^SIM3/i, `${ARM_BASE} Cortex-M3 cortex-m3`],
+  [/^TLE987/i, `${ARM_BASE} Cortex-M3 cortex-m3`],
+  [/^CC26[345]0/i, `${ARM_BASE} Cortex-M3 cortex-m3`],
+  [/^CC13[15]0/i, `${ARM_BASE} Cortex-M3 cortex-m3`],
+  [/^CC2538/i, `${ARM_BASE} Cortex-M3 cortex-m3`],
+
+  // ── Cortex-M4 / M4F ──
+  [/^STM32F3/i, `${ARM_BASE} Cortex-M4 cortex-m4`],
+  [/^STM32F4/i, `${ARM_BASE} Cortex-M4 cortex-m4`],
+  [/^STM32L4/i, `${ARM_BASE} Cortex-M4 cortex-m4`],
+  [/^STM32G4/i, `${ARM_BASE} Cortex-M4 cortex-m4`],
+  [/^STM32WB/i, `${ARM_BASE} Cortex-M4 cortex-m4`],
+  [/^STM32WL/i, `${ARM_BASE} Cortex-M4 cortex-m4`],
+  [/^NRF52/i, `${ARM_BASE} Cortex-M4 cortex-m4`],
+  [/^GD32F3/i, `${ARM_BASE} Cortex-M4 cortex-m4`],
+  [/^GD32F4/i, `${ARM_BASE} Cortex-M4 cortex-m4`],
+  [/^APM32F4/i, `${ARM_BASE} Cortex-M4 cortex-m4`],
+  [/^MM32F3/i, `${ARM_BASE} Cortex-M4 cortex-m4`],
+  [/^HC32F4/i, `${ARM_BASE} Cortex-M4 cortex-m4`],
+  [/^XMC4/i, `${ARM_BASE} Cortex-M4 cortex-m4`],
+  [/^CY8C6/i, `${ARM_BASE} Cortex-M4 cortex-m4`],
+  [/^EFM32PG/i, `${ARM_BASE} Cortex-M4 cortex-m4`],
+  [/^EFR32/i, `${ARM_BASE} Cortex-M4 cortex-m4`],
+  [/^SAM[DE]5/i, `${ARM_BASE} Cortex-M4 cortex-m4`],
+  [/^ATSAM[DE]5/i, `${ARM_BASE} Cortex-M4 cortex-m4`],
+  [/^SAM4/i, `${ARM_BASE} Cortex-M4 cortex-m4`],
+  [/^ATSAM4/i, `${ARM_BASE} Cortex-M4 cortex-m4`],
+  [/^ATSAMG/i, `${ARM_BASE} Cortex-M4 cortex-m4`],
+  [/^TM4C/i, `${ARM_BASE} Cortex-M4 cortex-m4`],
+  [/^MSP432/i, `${ARM_BASE} Cortex-M4 cortex-m4`],
+  [/^CC265[12]/i, `${ARM_BASE} Cortex-M4 cortex-m4`],
+  [/^CC2642/i, `${ARM_BASE} Cortex-M4 cortex-m4`],
+  [/^CC267/i, `${ARM_BASE} Cortex-M4 cortex-m4`],
+  [/^CC135[24]/i, `${ARM_BASE} Cortex-M4 cortex-m4`],
+  [/^CC131[1-4]/i, `${ARM_BASE} Cortex-M4 cortex-m4`],
+  [/^MK[LEVW]/i, `${ARM_BASE} Cortex-M4 cortex-m4`],
+  [/^MKE1/i, `${ARM_BASE} Cortex-M4 cortex-m4`],
+  [/^FS32K1/i, `${ARM_BASE} Cortex-M4 cortex-m4`],
+  [/^LPC43/i, `${ARM_BASE} Cortex-M4 cortex-m4`],
+  [/^LPC54/i, `${ARM_BASE} Cortex-M4 cortex-m4`],
+  [/^DA14[56]/i, `${ARM_BASE} Cortex-M33 cortex-m33`],
+  [/^DA141/i, `${ARM_BASE} Cortex-M0 cortex-m0`],
+  [/^RTL87/i, `${ARM_BASE} Cortex-M4 cortex-m4`],
+  [/^CYW/i, `${ARM_BASE} Cortex-M4 cortex-m4`],
+  [/^R7FA4/i, `${ARM_BASE} Cortex-M33 cortex-m33`],
+  [/^R7FA6/i, `${ARM_BASE} Cortex-M33 cortex-m33`],
+
+  // ── Cortex-M7 ──
+  [/^STM32F7/i, `${ARM_BASE} Cortex-M7 cortex-m7`],
+  [/^STM32H7/i, `${ARM_BASE} Cortex-M7 cortex-m7`],
+  [/^SAMS70/i, `${ARM_BASE} Cortex-M7 cortex-m7`],
+  [/^SAME70/i, `${ARM_BASE} Cortex-M7 cortex-m7`],
+  [/^SAMV7/i, `${ARM_BASE} Cortex-M7 cortex-m7`],
+  [/^ATSAMS70/i, `${ARM_BASE} Cortex-M7 cortex-m7`],
+  [/^ATSAME70/i, `${ARM_BASE} Cortex-M7 cortex-m7`],
+  [/^ATSAMV7/i, `${ARM_BASE} Cortex-M7 cortex-m7`],
+  [/^MIMXRT10/i, `${ARM_BASE} Cortex-M7 cortex-m7`],
+  [/^MIMXRT11/i, `${ARM_BASE} Cortex-M7 cortex-m7`],
+  [/^S32K3/i, `${ARM_BASE} Cortex-M7 cortex-m7`],
+  [/^XMC7/i, `${ARM_BASE} Cortex-M7 cortex-m7`],
+
+  // ── Cortex-M23 ──
+  [/^R7FA[02]/i, `${ARM_BASE} Cortex-M23 cortex-m23`],
+  [/^GD32L2/i, `${ARM_BASE} Cortex-M23 cortex-m23`],
+  [/^LPC55S0/i, `${ARM_BASE} Cortex-M23 cortex-m23`],
+
+  // ── Cortex-M33 ──
+  [/^STM32L5/i, `${ARM_BASE} Cortex-M33 cortex-m33`],
+  [/^STM32U[35]/i, `${ARM_BASE} Cortex-M33 cortex-m33`],
+  [/^STM32H5/i, `${ARM_BASE} Cortex-M33 cortex-m33`],
+  [/^STM32WBA/i, `${ARM_BASE} Cortex-M33 cortex-m33`],
+  [/^NRF53/i, `${ARM_BASE} Cortex-M33 cortex-m33`],
+  [/^NRF54/i, `${ARM_BASE} Cortex-M33 cortex-m33`],
+  [/^NRF91/i, `${ARM_BASE} Cortex-M33 cortex-m33`],
+  [/^LPC55[SX]/i, `${ARM_BASE} Cortex-M33 cortex-m33`],
+  [/^MIMXRT[56]/i, `${ARM_BASE} Cortex-M33 cortex-m33`],
+  [/^MCXA/i, `${ARM_BASE} Cortex-M33 cortex-m33`],
+  [/^MCXN/i, `${ARM_BASE} Cortex-M33 cortex-m33`],
+  [/^EFM32PG2/i, `${ARM_BASE} Cortex-M33 cortex-m33`],
+  [/^GD32W5/i, `${ARM_BASE} Cortex-M33 cortex-m33`],
+  [/^RP235[04]/i, `${ARM_BASE} Cortex-M33 cortex-m33`],
+
+  // ── Cortex-M55 / M85 ──
+  [/^STM32N6/i, `${ARM_BASE} Cortex-M55 cortex-m55`],
+  [/^R7FA8/i, `${ARM_BASE} Cortex-M85 cortex-m85`],
+
+  // ── Cortex-A (application processors) ──
+  [/^STM32MP/i, `${ARM_BASE} Cortex-A cortex-a`],
+  [/^IMX[6-9]/i, `${ARM_BASE} Cortex-A cortex-a`],
+  [/^MIMX/i, `${ARM_BASE} Cortex-A cortex-a`],
+  [/^AM335/i, `${ARM_BASE} Cortex-A8 cortex-a`],
+  [/^AM437/i, `${ARM_BASE} Cortex-A9 cortex-a`],
+  [/^AM57/i, `${ARM_BASE} Cortex-A15 cortex-a`],
+  [/^AM6[2-5]/i, `${ARM_BASE} Cortex-A53 cortex-a`],
+  [/^RK3/i, `${ARM_BASE} Cortex-A cortex-a`],
+  [/^ATSAMA5/i, `${ARM_BASE} Cortex-A5 cortex-a`],
+  [/^XC7Z/i, `${ARM_BASE} Cortex-A9 cortex-a`],
+
+  // ── Cortex-R ──
+  [/^TMS570/i, `${ARM_BASE} Cortex-R4 cortex-r`],
+  [/^RM4/i, `${ARM_BASE} Cortex-R4 cortex-r`],
+  [/^S6J3/i, `${ARM_BASE} Cortex-R5 cortex-r`],
+
+  // ── SAM3 (Cortex-M3/M4/M7 generic — catch remaining) ──
+  [/^SAM3/i, `${ARM_BASE} Cortex-M3 cortex-m3`],
+  [/^ATSAM3/i, `${ARM_BASE} Cortex-M3 cortex-m3`],
+];
+
 /**
  * Infer architecture keywords from MPN.
- * Returns searchable keywords for RISC-V parts, or "".
+ * Returns searchable keywords for RISC-V or ARM parts, or "".
  */
 export function inferArchitectureKeywords(mpn: string | null): string {
   if (!mpn) return "";
   const trimmed = mpn.trim();
   if (!trimmed) return "";
+
+  // Check RISC-V first
   for (const re of RISCV_MPN_PATTERNS) {
     if (re.test(trimmed)) return RISCV_KEYWORDS;
   }
+
+  // Check ARM
+  for (const [re, keywords] of ARM_MPN_RULES) {
+    if (re.test(trimmed)) return keywords;
+  }
+
   return "";
 }
 
