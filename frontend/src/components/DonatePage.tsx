@@ -58,6 +58,12 @@ export function DonatePage({ onBack }: { onBack: () => void }) {
             Star on GitHub
           </a>
         </div>
+        <div className="donate-credits">
+          <a href="https://casimir.engineering" target="_blank" rel="noopener noreferrer">
+            <img src="https://casimir.engineering/casimir-eng-logo.svg" alt="Casimir Engineering" className="casimir-logo" />
+          </a>
+          <span>By <a href="https://casimir.engineering" target="_blank" rel="noopener noreferrer">Casimir Engineering</a>, prototype to production scaling specialists.</span>
+        </div>
       </div>
     </div>
   );

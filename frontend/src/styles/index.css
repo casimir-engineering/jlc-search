@@ -105,6 +105,19 @@ code { font-family: monospace; background: #eee; padding: 1px 4px; border-radius
   text-decoration: none;
 }
 .donate-link-btn:hover { border-color: #0066cc; color: #0066cc; text-decoration: none; }
+.donate-credits {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 1.5rem;
+  font-size: 0.8rem;
+  color: #999;
+}
+.donate-credits a { color: #888; text-decoration: none; }
+.donate-credits a:hover { color: #0066cc; }
+.casimir-logo { height: 22px; width: auto; opacity: 0.7; vertical-align: middle; }
+.casimir-logo:hover { opacity: 1; }
 
 /* App layout */
 .app {
