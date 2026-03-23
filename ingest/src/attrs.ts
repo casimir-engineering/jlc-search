@@ -366,6 +366,91 @@ export function inferPackageAliases(pkg: string | null): string {
   return "";
 }
 
+// ── Architecture keyword inference (MPN-based) ──────────────────────
+
+/** RISC-V MPN patterns — matched against the part's MPN to inject architecture keywords */
+const RISCV_MPN_PATTERNS: RegExp[] = [
+  // WCH (Qingke RISC-V cores)
+  /^CH32[VXLM]/i,          // CH32V003, CH32X035, CH32L103, CH32M030
+  /^CH6[4][1-9]/i,         // CH641, CH643, CH645
+  /^CH56[5-9]/i,           // CH565, CH569
+  /^CH57[0-3]/i,           // CH571, CH573
+  /^CH58[1-5]/i,           // CH581-CH585
+  /^CH59[1-2]/i,           // CH591, CH592
+
+  // Espressif (RISC-V variants only — NOT ESP32, ESP32-S2, ESP32-S3 which are Xtensa)
+  /^ESP32-?C[2-6]/i,       // ESP32-C2, ESP32-C3, ESP32-C5, ESP32-C6, ESP32-C61
+  /^ESP32-?H\d/i,          // ESP32-H2, ESP32-H4
+  /^ESP32-?P\d/i,          // ESP32-P4
+  /^ESP8684/i,             // Rebadged ESP32-C2
+  /^ESP8685/i,             // Rebadged ESP32-C2
+
+  // GigaDevice (RISC-V variants)
+  /^GD32VF/i,              // GD32VF103
+  /^GD32VW/i,              // GD32VW553
+  /^GD32A5/i,              // GD32A503/A508 (Nuclei N300 RISC-V)
+
+  // Bouffalo Lab
+  /^BL60[2-6]/i,           // BL602, BL604, BL606
+  /^BL61[6-8]/i,           // BL616, BL618
+  /^BL70[2-6]/i,           // BL702, BL704, BL706
+  /^BL808/i,               // BL808 triple-core
+
+  // HPMicro (all are RISC-V)
+  /^HPM[56]/i,             // HPM5xxx, HPM6xxx
+
+  // Raspberry Pi (dual-arch ARM + RISC-V)
+  /^RP235[04]/i,           // RP2350, RP2354
+
+  // Canaan/Kendryte
+  /^K210/i,                // K210 AI SoC
+  /^K230/i,                // K230, K230D
+  /^K510/i,                // K510
+
+  // Allwinner (pure RISC-V SoCs)
+  /^D1-?[HhSs]/i,         // D1-H, D1s
+  /^F133/i,                // F133 (same silicon as D1s)
+
+  // Telink (only TLSR9xxx is RISC-V; TLSR8xxx is proprietary)
+  /^TLSR9/i,               // TLSR9211, TLSR9518, etc.
+
+  // Beken (RISC-V variants)
+  /^BK723[5-7]/i,          // BK7235, BK7236, BK7237
+  /^BK7256/i,              // BK7256
+
+  // Sophgo/CVITEK
+  /^SG200/i,               // SG2000, SG2002
+  /^CV18/i,                // CV1800, CV1811, CV1812, CV1835, CV1838
+
+  // T-Head (Alibaba XuanTie)
+  /^TH1520/i,              // TH1520
+
+  // SiFive
+  /^FE310/i,               // FE310-G002
+
+  // Nations Technologies
+  /^N32G4FR/i,             // N32G4FR RISC-V MCU
+
+  // Puya (only C6 series is RISC-V)
+  /^PY32C6/i,              // PY32C6xx
+];
+
+const RISCV_KEYWORDS = "RISC-V RISCV risc-v riscv risc-5 risc5";
+
+/**
+ * Infer architecture keywords from MPN.
+ * Returns searchable keywords for RISC-V parts, or "".
+ */
+export function inferArchitectureKeywords(mpn: string | null): string {
+  if (!mpn) return "";
+  const trimmed = mpn.trim();
+  if (!trimmed) return "";
+  for (const re of RISCV_MPN_PATTERNS) {
+    if (re.test(trimmed)) return RISCV_KEYWORDS;
+  }
+  return "";
+}
+
 /**
  * Build a searchable text string from the attributes JSON blob.
  * Returns space-separated tokens suitable for FTS5 indexing.

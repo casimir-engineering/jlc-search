@@ -5,6 +5,20 @@ export function detectLcscCode(q: string): boolean {
 
 // ── tsquery builders (PostgreSQL) ──────────────────────────────────────
 
+/** Normalize known hyphenated terms to their searchable joined form. */
+const TOKEN_NORMALIZATIONS: [RegExp, string][] = [
+  [/^risc-?v$/i, "riscv"],
+  [/^risc-?5$/i, "risc5"],
+  [/^wl-?csp$/i, "wlcsp"],
+];
+
+function normalizeToken(tok: string): string {
+  for (const [re, replacement] of TOKEN_NORMALIZATIONS) {
+    if (re.test(tok)) return replacement;
+  }
+  return tok;
+}
+
 /** Remove characters that are special in tsquery syntax. Keep dots/hyphens (simple dict preserves them). */
 function sanitize(tok: string): string {
   return tok.replace(/[&|!():*<>'\\]/g, "").toLowerCase().trim();
@@ -29,7 +43,8 @@ function needsPrefix(tok: string): boolean {
  * All tokens get :* prefix for substring-style matching.
  */
 function tokenToTsExpr(tok: string): string {
-  const clean = sanitize(tok);
+  const normalized = normalizeToken(tok);
+  const clean = sanitize(normalized);
   if (!clean) return "";
   return needsPrefix(clean) ? `${clean}:*` : clean;
 }
