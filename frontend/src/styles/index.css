@@ -277,6 +277,11 @@ code { font-family: monospace; background: #eee; padding: 1px 4px; border-radius
   border-color: #0066cc;
   color: #fff;
 }
+.chip-active:hover {
+  background: #0052a3;
+  border-color: #0052a3;
+  color: #fff;
+}
 .chip-danger { border-color: #cc2200; color: #cc2200; }
 .chip-danger:hover { border-color: #cc2200; color: #cc2200; }
 .chip-danger-confirm { background: #cc2200; border-color: #cc2200; color: #fff; }
