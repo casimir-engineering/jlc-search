@@ -29,7 +29,7 @@ export function App() {
   const {
     query, setQuery, filters, setFilters,
     results, setResults, total, loading, error, tookMs,
-    page, setPage, totalPages, pageSize,
+    page, setPage, totalPages, pageSize, searchCategories,
   } = useSearch();
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const { favorites, toggle: toggleFavorite, clearAll: clearFavorites } = useFavorites();
@@ -237,6 +237,7 @@ export function App() {
           onCartModeChange={handleCartModeChange}
           cartItemCount={cartItemCount}
           cartTotal={cartTotal}
+          searchCategories={query.trim() ? searchCategories : null}
         />
       </header>
 

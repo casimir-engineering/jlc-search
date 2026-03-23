@@ -17,6 +17,7 @@ interface Props {
   onCartModeChange: (v: boolean) => void;
   cartItemCount: number;
   cartTotal: number;
+  searchCategories?: { name: string; count: number }[] | null;
 }
 
 /** Generic chip-style dropdown: button with ▼ arrow, click to open a list of options. */
@@ -62,15 +63,18 @@ function ChipSelect<T extends string>({ value, options, onChange, active }: {
   );
 }
 
-function CategorySelect({ selected, onChange }: { selected: string[]; onChange: (cats: string[]) => void }) {
-  const [categories, setCategories] = useState<{ name: string; count: number }[]>([]);
+function CategorySelect({ selected, onChange, searchCategories }: { selected: string[]; onChange: (cats: string[]) => void; searchCategories?: { name: string; count: number }[] | null }) {
+  const [globalCategories, setGlobalCategories] = useState<{ name: string; count: number }[]>([]);
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    fetchCategories().then(setCategories);
+    fetchCategories().then(setGlobalCategories);
   }, []);
+
+  // Use search-scoped categories when available, otherwise fall back to global
+  const categories = searchCategories ?? globalCategories;
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -80,9 +84,16 @@ function CategorySelect({ selected, onChange }: { selected: string[]; onChange: 
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
 
+  // Ensure selected categories always appear in the list (even if not in current search results)
+  const categoriesWithSelected = (() => {
+    const names = new Set(categories.map((c) => c.name));
+    const extras = selected.filter((s) => !names.has(s)).map((s) => ({ name: s, count: 0 }));
+    return extras.length > 0 ? [...categories, ...extras] : categories;
+  })();
+
   const filtered = search
-    ? categories.filter((c) => c.name.toLowerCase().includes(search.toLowerCase()))
-    : categories;
+    ? categoriesWithSelected.filter((c) => c.name.toLowerCase().includes(search.toLowerCase()))
+    : categoriesWithSelected;
 
   const toggle = (name: string) => {
     if (selected.includes(name)) onChange(selected.filter((c) => c !== name));
@@ -136,7 +147,7 @@ function CategorySelect({ selected, onChange }: { selected: string[]; onChange: 
   );
 }
 
-export function FilterBar({ filters, onChange, cartMode, onCartModeChange, cartItemCount, cartTotal }: Props) {
+export function FilterBar({ filters, onChange, cartMode, onCartModeChange, cartItemCount, cartTotal, searchCategories }: Props) {
   const basicActive = filters.partTypes.includes("Basic");
 
   return (
@@ -152,6 +163,7 @@ export function FilterBar({ filters, onChange, cartMode, onCartModeChange, cartI
       <CategorySelect
         selected={filters.categories}
         onChange={(categories) => onChange({ categories })}
+        searchCategories={searchCategories}
       />
       <ChipSelect
         value={filters.stockFilter}

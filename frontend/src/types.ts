@@ -24,6 +24,7 @@ export interface SearchResponse {
   total: number;
   took_ms: number;
   query: string;
+  categories?: { name: string; count: number }[];
 }
 
 export interface PriceTier {

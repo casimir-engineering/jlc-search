@@ -18,6 +18,7 @@ export function useSearch() {
   const [error, setError] = useState<string | null>(null);
   const [tookMs, setTookMs] = useState<number | null>(null);
   const [page, setPage] = useState(0);
+  const [searchCategories, setSearchCategories] = useState<{ name: string; count: number }[] | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -71,6 +72,7 @@ export function useSearch() {
       setTookMs(null);
       setError(null);
       setLoading(false);
+      setSearchCategories(null);
       return;
     }
 
@@ -95,6 +97,7 @@ export function useSearch() {
           setResults(data.results);
           setTotal(data.total);
           setTookMs(data.took_ms);
+          setSearchCategories(data.categories ?? null);
           setLoading(false);
 
           // Push history entry when a search completes with a new query
@@ -135,5 +138,6 @@ export function useSearch() {
     setPage,
     totalPages,
     pageSize: PAGE_SIZE,
+    searchCategories,
   };
 }

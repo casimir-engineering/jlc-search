@@ -122,7 +122,7 @@ function buildRangeFilter(sql: ReturnType<typeof getSql>, filterGroups: RangeFil
 
 // ── Main search function ─────────────────────────────────────────────
 
-export async function search(params: SearchParams): Promise<{ results: PartSummary[]; total: number }> {
+export async function search(params: SearchParams): Promise<{ results: PartSummary[]; total: number; categories?: { name: string; count: number }[] }> {
   const sql = getSql();
   const { q, limit, offset } = params;
   const trimmed = q.trim();
@@ -371,6 +371,16 @@ export async function search(params: SearchParams): Promise<{ results: PartSumma
       })),
     ];
 
+    // Count categories from all tier results (before pagination) for faceted filtering
+    const catCounts = new Map<string, number>();
+    for (const r of results) {
+      const cat = r.category;
+      catCounts.set(cat, (catCounts.get(cat) ?? 0) + 1);
+    }
+    const categories = [...catCounts.entries()]
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count);
+
     // Fast total estimate using EXPLAIN (avoids slow COUNT(*) on broad queries)
     // Use OR query for estimate if available (broader match = better total), else AND
     const estimateQ = orQ ?? andQ;
@@ -411,7 +421,7 @@ export async function search(params: SearchParams): Promise<{ results: PartSumma
       if (isPriceSort) {
         deepResults = applySortToResults(deepResults, params.sort);
       }
-      return { results: deepResults.slice(0, limit), total: totalCount };
+      return { results: deepResults.slice(0, limit), total: totalCount, categories };
     }
 
     if (isRelevanceSort) {
@@ -427,7 +437,7 @@ export async function search(params: SearchParams): Promise<{ results: PartSumma
       results = results.slice(offset, offset + limit);
     }
 
-    return { results: results.slice(0, limit), total: totalCount };
+    return { results: results.slice(0, limit), total: totalCount, categories };
   } catch (err) {
     console.error("Search error:", err);
     return { results: [], total: 0 };

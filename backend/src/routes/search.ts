@@ -30,7 +30,7 @@ searchRouter.get("/", async (c) => {
 
   const start = performance.now();
   try {
-    const { results, total } = await search({ q, partTypes: partType, categories, stockFilter, economic, fuzzy, limit, offset, sort, matchAll });
+    const { results, total, categories: facetCategories } = await search({ q, partTypes: partType, categories, stockFilter, economic, fuzzy, limit, offset, sort, matchAll });
     const took_ms = Math.round(performance.now() - start);
 
     // Opportunistic non-blocking refresh for parts missing MOQ/pricing or JLC stock
@@ -40,7 +40,7 @@ searchRouter.get("/", async (c) => {
     }
 
     c.header("Cache-Control", "public, max-age=30, stale-while-revalidate=60");
-    return c.json<SearchResponse>({ results, total, took_ms, query: q });
+    return c.json<SearchResponse>({ results, total, took_ms, query: q, categories: facetCategories });
   } catch (err) {
     console.error("Search route error:", err);
     return c.json<SearchResponse>({ results: [], total: 0, took_ms: Math.round(performance.now() - start), query: q });
