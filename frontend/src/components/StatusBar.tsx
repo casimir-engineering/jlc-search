@@ -37,12 +37,10 @@ export function StatusBar() {
           : "No parts in database — run ingest first"}
       </span>
       <span className="footer-center">
-        By{" "}
         <a href="https://casimir.engineering" target="_blank" rel="noopener noreferrer" className="footer-credit">
           <img src="https://casimir.engineering/casimir-eng-logo.svg" alt="Casimir Engineering" className="footer-logo" />
-          Casimir Engineering
         </a>
-        , prototype to production scaling specialists.
+        {" "}By <a href="https://casimir.engineering" target="_blank" rel="noopener noreferrer" className="footer-credit">Casimir Engineering</a>, prototype to production scaling specialists.
       </span>
       <label className="szlcsc-toggle">
         <input
