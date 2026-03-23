@@ -29,16 +29,18 @@ export function StatusBar() {
 
   if (!status) return null;
 
-  const lastUpdated = status.last_ingested
-    ? new Date(status.last_ingested).toLocaleDateString()
-    : "never";
-
   return (
     <div className="status-bar">
       <span>
         {status.total_parts > 0
-          ? `${status.total_parts.toLocaleString()} parts · updated ${lastUpdated}`
+          ? `${status.total_parts.toLocaleString()} parts`
           : "No parts in database — run ingest first"}
+        {" · "}
+        <a href="https://casimir.engineering" target="_blank" rel="noopener noreferrer" className="footer-credit">
+          <img src="https://casimir.engineering/casimir-eng-logo.svg" alt="Casimir Engineering" className="footer-logo" />
+          Casimir Engineering
+        </a>
+        , prototype to production scaling specialists.
       </span>
       <label className="szlcsc-toggle">
         <input
