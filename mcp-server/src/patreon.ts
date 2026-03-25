@@ -162,7 +162,7 @@ const PATREON_AUTH_URL = "https://www.patreon.com/oauth2/authorize";
 const PATREON_TOKEN_URL = "https://www.patreon.com/api/oauth2/token";
 const PATREON_IDENTITY_URL = "https://www.patreon.com/api/oauth2/v2/identity";
 
-const MCP_URL = "https://jlcsearch.casimir.engineering/mcp-api/mcp";
+const MCP_URL = "https://search.casimir.engineering/mcp-api/mcp";
 
 export async function handleKeyPage(c: Context): Promise<Response> {
   const clientId = process.env.PATREON_CLIENT_ID;

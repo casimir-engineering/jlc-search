@@ -2,7 +2,7 @@
 
 Fast search engine for JLCPCB/LCSC electronic components. Indexes 3.5M+ parts with full-text search, numeric range filtering, datasheet property extraction, and live stock/price updates.
 
-**Live:** [jlcsearch.casimir.engineering](https://jlcsearch.casimir.engineering)
+**Live:** [search.casimir.engineering](https://search.casimir.engineering)
 
 ## Features
 

@@ -20,7 +20,7 @@ export function DonatePage({ onBack }: { onBack: () => void }) {
               <svg width="20" height="20" viewBox="0 0 24 24" fill="#fff" style={{verticalAlign: '-4px', marginRight: '6px'}}><path d="M14.82 2.41c3.96 0 7.18 3.24 7.18 7.21 0 3.96-3.22 7.18-7.18 7.18-3.97 0-7.21-3.22-7.21-7.18 0-3.97 3.24-7.21 7.21-7.21M2 21.6h3.5V2.41H2V21.6z"/></svg>
               Become a Patron — Get MCP Access
             </a>
-            <a href="https://jlcsearch.casimir.engineering/mcp-api/key" className="patreon-btn" style={{background: '#2a2a3e', border: '1px solid #555'}}>
+            <a href="https://search.casimir.engineering/mcp-api/key" className="patreon-btn" style={{background: '#2a2a3e', border: '1px solid #555'}}>
               Patrons: Get Your MCP Key
             </a>
           </div>

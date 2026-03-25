@@ -4,7 +4,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { formatPart } from "../format.ts";
 
 const BACKEND_URL = process.env.BACKEND_URL ?? "http://localhost:3001";
-const SITE_URL = "https://jlcsearch.casimir.engineering";
+const SITE_URL = "https://search.casimir.engineering";
 
 export function register(server: McpServer): void {
   server.registerTool(
