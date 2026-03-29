@@ -225,8 +225,20 @@ export function App() {
       ) : (<>
       <header className="app-header">
         <div className="app-logo">
-          <span className="logo-text">jlc-search</span>
-          <span className="logo-sub">JLCPCB parts</span>
+          <svg className="logo-icon" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="15" cy="15" r="11" stroke="#0066cc" strokeWidth="2.5"/>
+            <line x1="23.5" y1="23.5" x2="33" y2="33" stroke="#0066cc" strokeWidth="2.5" strokeLinecap="round"/>
+            <rect x="10" y="10" width="10" height="10" rx="1.5" stroke="#0066cc" strokeWidth="1.5"/>
+            <line x1="12" y1="10" x2="12" y2="20" stroke="#0066cc" strokeWidth="1"/>
+            <line x1="15" y1="10" x2="15" y2="20" stroke="#0066cc" strokeWidth="1"/>
+            <line x1="18" y1="10" x2="18" y2="20" stroke="#0066cc" strokeWidth="1"/>
+            <line x1="10" y1="13" x2="20" y2="13" stroke="#0066cc" strokeWidth="1"/>
+            <line x1="10" y1="17" x2="20" y2="17" stroke="#0066cc" strokeWidth="1"/>
+          </svg>
+          <div className="logo-text-group">
+            <span className="logo-text">Casimir Search</span>
+            <span className="logo-sub">Electronic components</span>
+          </div>
         </div>
 
         <SearchBar value={query} onChange={setQuery} loading={loading} />

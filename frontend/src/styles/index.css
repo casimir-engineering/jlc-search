@@ -150,12 +150,6 @@ code { font-family: monospace; background: #eee; padding: 1px 4px; border-radius
   transition: padding-top 0.2s ease;
 }
 
-.app-logo {
-  display: flex;
-  align-items: baseline;
-  gap: 0.5rem;
-}
-
 .app-home-mode .app-logo {
   margin-bottom: 1rem;
 }
@@ -164,15 +158,33 @@ code { font-family: monospace; background: #eee; padding: 1px 4px; border-radius
   display: none;
 }
 
+.app-logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.logo-icon {
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
+}
+
+.logo-text-group {
+  display: flex;
+  flex-direction: column;
+}
+
 .logo-text {
-  font-size: 1.8rem;
+  font-size: 1.6rem;
   font-weight: 700;
   letter-spacing: -0.03em;
   color: #1a1a1a;
+  line-height: 1.1;
 }
 
 .logo-sub {
-  font-size: 0.9rem;
+  font-size: 0.82rem;
   color: #888;
   font-weight: 400;
 }

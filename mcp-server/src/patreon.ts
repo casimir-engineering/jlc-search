@@ -421,7 +421,7 @@ bearer_token_env_var = "JLCSEARCH_API_KEY"</code></pre>
     }
   </script>`;
 
-  return c.html(renderPage(`jlc-search MCP`, body));
+  return c.html(renderPage(`Casimir Search MCP`, body));
 }
 
 function escHtml(s: string): string {

@@ -2,7 +2,7 @@ export function DonatePage({ onBack }: { onBack: () => void }) {
   return (
     <div className="donate-page">
       <button className="donate-back" onClick={onBack}>&larr; Back to search</button>
-      <h1>Support jlc-search</h1>
+      <h1>Support Casimir Search</h1>
       <p className="donate-subtitle">
         This tool is free and open source. If it saved you time, consider helping cover our hosting costs.
       </p>
@@ -14,7 +14,7 @@ export function DonatePage({ onBack }: { onBack: () => void }) {
       <div className="donate-grid">
         <div className="donate-card" style={{minWidth: '100%'}}>
           <h2>Patreon</h2>
-          <p className="donate-hint">Support JLCsearch on Patreon and get AI-powered component search.<br/>Your Claude, Codex or any AI can find any part from 3.5M+ components.</p>
+          <p className="donate-hint">Support Casimir Search on Patreon and get AI-powered component search.<br/>Your Claude, Codex or any AI can find any part from 3.5M+ components.</p>
           <div style={{marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'center'}}>
             <a href="https://www.patreon.com/join/raphaelcasimir" target="_blank" rel="noopener noreferrer" className="patreon-btn">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="#fff" style={{verticalAlign: '-4px', marginRight: '6px'}}><path d="M14.82 2.41c3.96 0 7.18 3.24 7.18 7.21 0 3.96-3.22 7.18-7.18 7.18-3.97 0-7.21-3.22-7.21-7.18 0-3.97 3.24-7.21 7.21-7.21M2 21.6h3.5V2.41H2V21.6z"/></svg>
