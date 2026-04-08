@@ -1,0 +1,111 @@
+# docker-compose.test.yml — TEST stack for /test path-based staging deployment
+#
+# This file defines the TEST stack that runs ALONGSIDE production on the same host.
+# Production lives in docker-compose.yml (ports 3001/8080/3002). The test stack
+# mirrors the three app services on different ports (3011/8081/3012) and points
+# at a separate `jlc_test` database.
+#
+# Usage:
+#   docker compose -p jlc-search-test -f docker-compose.test.yml up -d
+#   docker compose -p jlc-search-test -f docker-compose.test.yml down
+#
+# Ports:
+#   - backend-test:    3011 (prod: 3001)
+#   - frontend-test:   8081 (prod: 8080)
+#   - mcp-server-test: 3012 (prod: 3002)
+#
+# Database:
+#   - Points at `jlc_test` database, separate from prod `jlc`.
+#
+# Analytics:
+#   - PostHog is disabled in test (empty keys) to avoid polluting prod analytics.
+#
+# Shared infrastructure:
+#   - The `db` (PostgreSQL) and `npm` (Nginx Proxy Manager) containers are shared
+#     with the prod compose project (jlc-search). Those MUST be running first:
+#       docker compose -f docker-compose.yml up -d db npm
+#   - We cannot express `depends_on: db` here because docker compose cannot
+#     declare cross-project dependencies. The services will fail fast and restart
+#     if db isn't up yet (unless-stopped policy handles retry).
+#
+# HTTPS routing:
+#   - To route https://<domain>/test/* traffic to this stack, run:
+#       scripts/enable-test-location.sh
+#     This adds a `/test/` location block to the NPM proxy host that forwards
+#     to localhost:8081 (frontend-test), which in turn proxies /test/api/* to
+#     localhost:3011 (backend-test).
+
+services:
+  backend-test:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    image: jlc-search-backend:test
+    network_mode: host
+    volumes:
+      - img_cache_test:/app/data/img
+    environment:
+      # Falls back to constructing URL from POSTGRES_PASSWORD if DATABASE_URL_TEST
+      # isn't explicitly set in .env. Points at the separate `jlc_test` database.
+      DATABASE_URL: ${DATABASE_URL_TEST:-postgres://jlc:${POSTGRES_PASSWORD}@localhost:5432/jlc_test}
+      PORT: "3011"
+      ALLOWED_ORIGINS: https://search.the-chipyard.com
+      # PostHog explicitly disabled in test to avoid polluting prod analytics.
+      POSTHOG_KEY: ""
+      POSTHOG_HOST: ""
+    # NOTE: No `depends_on: db` — the db container lives in the prod compose
+    # project (jlc-search) and docker compose cannot express cross-project
+    # dependencies. Ensure prod's db is running before starting this stack.
+    restart: unless-stopped
+
+  frontend-test:
+    build:
+      context: frontend
+      dockerfile: Dockerfile
+      args:
+        # /test path prefix so fetches become /test/api/*
+        VITE_API_BASE: /test
+        # PostHog disabled in the test bundle.
+        VITE_POSTHOG_KEY: ""
+        VITE_POSTHOG_HOST: ""
+        # Vite base path so built assets are hashed as /test/assets/*
+        VITE_BASE: /test/
+        # Selects the test nginx config that listens on 8081.
+        NGINX_CONF: nginx.test.conf
+    image: jlc-search-frontend:test
+    network_mode: host
+    depends_on:
+      - backend-test
+    restart: unless-stopped
+
+  mcp-server-test:
+    build:
+      context: .
+      dockerfile: mcp-server/Dockerfile
+    image: jlc-search-mcp-server:test
+    network_mode: host
+    environment:
+      DATABASE_URL: ${DATABASE_URL_TEST:-postgres://jlc:${POSTGRES_PASSWORD}@localhost:5432/jlc_test}
+      MCP_PORT: "3012"
+      # Points at backend-test (port 3011), not prod backend.
+      BACKEND_URL: "http://localhost:3011"
+      # Test mode — no auth required.
+      MCP_REQUIRE_AUTH: "false"
+      # Patreon integration disabled in test.
+      PATREON_WEBHOOK_SECRET: ""
+      PATREON_CLIENT_ID: ""
+      PATREON_CLIENT_SECRET: ""
+      PATREON_CAMPAIGN_ID: ""
+      PATREON_TIER_HOBBYIST: ""
+      PATREON_TIER_ENGINEER: ""
+      PATREON_TIER_ADDICT: ""
+      # PostHog disabled in test.
+      POSTHOG_KEY: ""
+      POSTHOG_HOST: ""
+    depends_on:
+      - backend-test
+    restart: unless-stopped
+
+volumes:
+  # Separate image cache so test stack doesn't mix with prod's img_cache volume.
+  img_cache_test:

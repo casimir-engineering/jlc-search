@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
 import { getStatus } from "../api.ts";
+import { storageKey } from "../utils/storage.ts";
+
+const SZLCSC_KEY = storageKey("szlcsc");
 
 export function StatusBar() {
   const [status, setStatus] = useState<{
@@ -8,7 +11,7 @@ export function StatusBar() {
   } | null>(null);
 
   const [szlcsc, setSzlcsc] = useState(
-    () => localStorage.getItem("jlc-szlcsc") === "1"
+    () => localStorage.getItem(SZLCSC_KEY) === "1"
   );
 
   useEffect(() => {
@@ -21,9 +24,9 @@ export function StatusBar() {
     const checked = e.target.checked;
     setSzlcsc(checked);
     if (checked) {
-      localStorage.setItem("jlc-szlcsc", "1");
+      localStorage.setItem(SZLCSC_KEY, "1");
     } else {
-      localStorage.removeItem("jlc-szlcsc");
+      localStorage.removeItem(SZLCSC_KEY);
     }
   };
 

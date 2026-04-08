@@ -13,6 +13,7 @@
       // they never load this HTML, so they continue to hit the legacy host,
       // which is still served by NPM as a proxy to the same backend.
       (function () {
+        if (window.location.pathname.indexOf("/test") === 0) return;
         var legacy = {
           "search.casimir.engineering": 1,
           "jlcsearch.casimir.engineering": 1,

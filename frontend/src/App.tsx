@@ -13,14 +13,15 @@ import { StatusBar } from "./components/StatusBar.tsx";
 import { DonatePage } from "./components/DonatePage.tsx";
 import type { Filters, PartSummary } from "./types.ts";
 import { DEFAULT_FILTERS } from "./hooks/usePersistedFilters.ts";
+import { isPath, buildPath } from "./utils/path.ts";
 
 export function App() {
-  const [showDonate, setShowDonate] = useState(() => window.location.pathname === "/donate");
+  const [showDonate, setShowDonate] = useState(() => isPath("/donate"));
 
   // Restore donate page state on browser back/forward
   useEffect(() => {
     function handlePopState() {
-      setShowDonate(window.location.pathname === "/donate");
+      setShowDonate(isPath("/donate"));
     }
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
@@ -218,10 +219,10 @@ export function App() {
     <div className={`app ${hasResults ? "app-results-mode" : "app-home-mode"}`}>
       <div className="donate-bar">
         <span>Did this save you time? Help cover our pricey Asia hosting costs.</span>
-        <a href="/donate" className="donate-btn" onClick={(e) => { e.preventDefault(); setShowDonate(true); window.history.pushState(null, "", "/donate"); }}>Donate and get MCP server access!</a>
+        <a href="/donate" className="donate-btn" onClick={(e) => { e.preventDefault(); setShowDonate(true); window.history.pushState(null, "", buildPath("/donate")); }}>Donate and get MCP server access!</a>
       </div>
       {showDonate ? (
-        <DonatePage onBack={() => { setShowDonate(false); window.history.pushState(null, "", query ? `/?q=${encodeURIComponent(query)}` : "/"); }} />
+        <DonatePage onBack={() => { setShowDonate(false); window.history.pushState(null, "", query ? buildPath(`/?q=${encodeURIComponent(query)}`) : buildPath("/")); }} />
       ) : (<>
       <header className="app-header">
         <div className="app-logo">

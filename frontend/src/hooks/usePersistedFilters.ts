@@ -1,7 +1,8 @@
 import { useState, useCallback } from "react";
 import type { Filters } from "../types.ts";
+import { storageKey } from "../utils/storage.ts";
 
-const STORAGE_KEY = "jlc-filters";
+const STORAGE_KEY = storageKey("filters");
 const FILTER_VERSION = 3; // Bump this when filter shape changes
 
 interface StoredFilters {

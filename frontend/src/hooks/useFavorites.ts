@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
+import { storageKey } from "../utils/storage.ts";
 
-const STORAGE_KEY = "jlc-favorites";
+const STORAGE_KEY = storageKey("favorites");
 
 function loadFavorites(): Set<string> {
   try {

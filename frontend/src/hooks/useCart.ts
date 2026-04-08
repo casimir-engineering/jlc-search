@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from "react";
+import { storageKey } from "../utils/storage.ts";
 
-const STORAGE_KEY = "jlc-cart-quantities";
+const STORAGE_KEY = storageKey("cart-quantities");
 
 function loadQuantities(): Record<string, number> {
   try {

@@ -4,6 +4,9 @@ import { getLineTotal } from "../utils/price.ts";
 import { generateLcscBomCsv, generateJlcpcbBomCsv, downloadCsv } from "../utils/bom.ts";
 import type { BomItem } from "../utils/bom.ts";
 import { generateShareUrl, copyToClipboard } from "../utils/share.ts";
+import { storageKey } from "../utils/storage.ts";
+
+const SZLCSC_KEY = storageKey("szlcsc");
 
 interface Props {
   parts: PartSummary[];
@@ -51,7 +54,7 @@ export function CartSummary({ parts, quantities, onClearAll }: Props) {
   }
 
   function handleOpenBomTool() {
-    const useSzlcsc = localStorage.getItem("jlc-szlcsc") === "1";
+    const useSzlcsc = localStorage.getItem(SZLCSC_KEY) === "1";
     const url = useSzlcsc
       ? "https://bom.szlcsc.com/bom.html"
       : "https://www.lcsc.com/bom";
