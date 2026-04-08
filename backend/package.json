@@ -8,7 +8,8 @@
   },
   "dependencies": {
     "hono": "^4.6.0",
-    "postgres": "^3.4.5"
+    "postgres": "^3.4.5",
+    "posthog-node": "^5.29.1"
   },
   "devDependencies": {
     "@types/bun": "latest"

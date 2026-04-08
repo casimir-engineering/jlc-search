@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { search } from "../search/engine.ts";
 import { refreshFromLcsc } from "../lcsc.ts";
 import { refreshJlcStock } from "../jlcpcb-stock.ts";
+import { posthog } from "../posthog.ts";
 import type { SearchResponse } from "../types.ts";
 
 export const searchRouter = new Hono();
@@ -38,6 +39,23 @@ searchRouter.get("/", async (c) => {
       if ((r as any).moq == null) refreshFromLcsc((r as any).lcsc);
       if ((r as any).jlc_stock === 0) refreshJlcStock((r as any).lcsc);
     }
+
+    const ip = c.req.header("x-real-ip") ?? c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ?? "anonymous";
+    posthog.capture({
+      distinctId: ip,
+      event: "search",
+      properties: {
+        query: q,
+        result_count: results.length,
+        total,
+        took_ms,
+        sort,
+        stock_filter: stockFilter,
+        part_types: partType,
+        categories,
+        page: offset / limit,
+      },
+    });
 
     c.header("Cache-Control", "public, max-age=30, stale-while-revalidate=60");
     return c.json<SearchResponse>({ results, total, took_ms, query: q, categories: facetCategories });
