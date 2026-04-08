@@ -1,8 +1,8 @@
-# jlc-search
+# Search the Chipyard (jlc-search)
 
 Fast search engine for JLCPCB/LCSC electronic components. Indexes 3.5M+ parts with full-text search, numeric range filtering, datasheet property extraction, and live stock/price updates.
 
-**Live:** [search.casimir.engineering](https://search.casimir.engineering)
+**Live:** [search.the-chipyard.com](https://search.the-chipyard.com)
 
 ## Features
 

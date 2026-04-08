@@ -35,6 +35,8 @@ services:
       DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env}
       PORT: "3001"
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000}
+      POSTHOG_KEY: ${POSTHOG_KEY:-}
+      POSTHOG_HOST: ${POSTHOG_HOST:-}
     depends_on:
       db:
         condition: service_healthy
@@ -44,6 +46,10 @@ services:
     build:
       context: frontend
       dockerfile: Dockerfile
+      args:
+        VITE_API_BASE: ${VITE_API_BASE:-}
+        VITE_POSTHOG_KEY: ${VITE_POSTHOG_KEY:-}
+        VITE_POSTHOG_HOST: ${VITE_POSTHOG_HOST:-}
     network_mode: host
     depends_on:
       - backend
@@ -78,6 +84,8 @@ services:
       PATREON_TIER_HOBBYIST: ${PATREON_TIER_HOBBYIST:-}
       PATREON_TIER_ENGINEER: ${PATREON_TIER_ENGINEER:-}
       PATREON_TIER_ADDICT: ${PATREON_TIER_ADDICT:-}
+      POSTHOG_KEY: ${POSTHOG_KEY:-}
+      POSTHOG_HOST: ${POSTHOG_HOST:-}
     depends_on:
       - backend
     restart: unless-stopped

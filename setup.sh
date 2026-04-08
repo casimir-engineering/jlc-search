@@ -3,8 +3,8 @@
 # jlc-search one-command setup
 #
 # Usage:
-#   ./setup.sh                      # local/dev setup (domain=localhost)
-#   ./setup.sh jlcsearch.example.com  # production setup with domain
+#   ./setup.sh                           # local/dev setup (domain=localhost)
+#   ./setup.sh search.the-chipyard.com   # production setup with domain
 #
 # Safe to run multiple times (idempotent).
 # =============================================================================
@@ -141,7 +141,6 @@ fi
 # Set domain if provided as argument
 if [ -n "$DOMAIN" ]; then
   sed -i "s|^DOMAIN=.*|DOMAIN=$DOMAIN|" .env
-  sed -i "s|^ALLOWED_ORIGINS=.*|ALLOWED_ORIGINS=https://$DOMAIN|" .env
   ok "Domain set to $DOMAIN."
 else
   DOMAIN=$(grep '^DOMAIN=' .env | cut -d= -f2-)
@@ -152,6 +151,19 @@ else
   else
     ok "Using existing domain from .env: $DOMAIN"
   fi
+fi
+
+# Derive ALLOWED_ORIGINS from the primary domain + any aliases listed in .env.
+# Always include localhost:3000 for dev. Skip if user has manually customized.
+CURRENT_ORIGINS=$(grep '^ALLOWED_ORIGINS=' .env | cut -d= -f2-)
+DOMAIN_ALIASES_VAL=$(grep '^DOMAIN_ALIASES=' .env | cut -d= -f2- || true)
+if [ "$DOMAIN" != "localhost" ] && { [ -z "$CURRENT_ORIGINS" ] || [ "$CURRENT_ORIGINS" = "http://localhost:3000" ]; }; then
+  NEW_ORIGINS="http://localhost:3000,https://${DOMAIN}"
+  for a in $DOMAIN_ALIASES_VAL; do
+    NEW_ORIGINS="${NEW_ORIGINS},https://${a}"
+  done
+  sed -i "s|^ALLOWED_ORIGINS=.*|ALLOWED_ORIGINS=${NEW_ORIGINS}|" .env
+  ok "ALLOWED_ORIGINS derived from domain + aliases."
 fi
 
 # ---------------------------------------------------------------------------

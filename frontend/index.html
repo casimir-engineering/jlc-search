@@ -3,8 +3,32 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Casimir Search — Electronic Components</title>
+    <title>Search the Chipyard — Electronic Components</title>
+    <meta name="description" content="Fast search for JLCPCB/LCSC electronic components — 3.5M+ parts, instant full-text search, range filters, BOM builder." />
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 36' fill='none'><circle cx='15' cy='15' r='11' stroke='%230066cc' stroke-width='2.5'/><line x1='23.5' y1='23.5' x2='33' y2='33' stroke='%230066cc' stroke-width='2.5' stroke-linecap='round'/><rect x='10' y='10' width='10' height='10' rx='1.5' stroke='%230066cc' stroke-width='1.5'/></svg>" />
+    <script>
+      // Migrate visitors from legacy hostnames to the canonical domain.
+      // Preserves pathname, query, and hash (so old #cart=... share-BOM links still work).
+      // MCP clients (which POST directly to /mcp-api/mcp) are NOT affected —
+      // they never load this HTML, so they continue to hit the legacy host,
+      // which is still served by NPM as a proxy to the same backend.
+      (function () {
+        var legacy = {
+          "search.casimir.engineering": 1,
+          "jlcsearch.casimir.engineering": 1,
+          "search.raph.io": 1,
+        };
+        var h = window.location.hostname;
+        if (legacy[h]) {
+          var target =
+            "https://search.the-chipyard.com" +
+            window.location.pathname +
+            window.location.search +
+            window.location.hash;
+          window.location.replace(target);
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

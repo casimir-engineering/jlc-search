@@ -4,7 +4,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { formatPart } from "../format.ts";
 
 const BACKEND_URL = process.env.BACKEND_URL ?? "http://localhost:3001";
-const SITE_URL = "https://search.casimir.engineering";
+const SITE_URL = "https://search.the-chipyard.com";
 
 export function register(server: McpServer): void {
   server.registerTool(
@@ -13,7 +13,7 @@ export function register(server: McpServer): void {
       title: "Create & Share a BOM",
       description:
         "Create a Bill of Materials (BOM) from a list of LCSC part numbers and quantities. " +
-        "Returns a shareable jlcsearch URL that opens the BOM directly in the browser, " +
+        "Returns a shareable Search the Chipyard URL that opens the BOM directly in the browser, " +
         "plus a summary with pricing and stock for each part. " +
         "Use this after finding parts with search_parts to build a complete BOM.",
       inputSchema: z.object({

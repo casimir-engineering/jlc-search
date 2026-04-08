@@ -30,8 +30,8 @@ This single command:
 ### Setup Script Options
 
 ```bash
-./setup.sh                     # Local/dev setup (domain=localhost, no SSL)
-./setup.sh jlcsearch.example.com  # Production setup with domain
+./setup.sh                            # Local/dev setup (domain=localhost, no SSL)
+./setup.sh search.the-chipyard.com    # Production setup with domain
 ```
 
 The script is **idempotent** — safe to run multiple times. It won't overwrite an existing `.env` or regenerate passwords that have already been customized.
@@ -44,13 +44,34 @@ The script is **idempotent** — safe to run multiple times. It won't overwrite 
 make configure-npm
 ```
 
-This automatically:
+This automatically, for each configured hostname:
 - Logs into Nginx Proxy Manager
-- Creates a proxy host for your domain → localhost:8080
+- Creates a proxy host for the domain → localhost:8080
 - Requests a Let's Encrypt SSL certificate
 - Enables Force SSL and HTTP/2
 
-**Manual alternative**: Open `http://your-server-ip:81` in a browser, log in with the credentials from `.env`, and configure the proxy host manually.
+Set `DOMAIN` in `.env` to the canonical hostname. If you also want legacy
+hostnames to keep serving the same site (e.g. for a domain migration — so
+existing share-BOM links still load and MCP clients configured against the
+old URL keep working), list them in `DOMAIN_ALIASES`:
+
+```
+DOMAIN=search.the-chipyard.com
+DOMAIN_ALIASES=search.casimir.engineering jlcsearch.casimir.engineering
+```
+
+`make configure-npm` then provisions a proxy host + cert for the primary
+domain and for every alias. Each alias forwards to the same backend, so:
+- **Real users** on an old URL get migrated to the canonical host on next
+  visit via a tiny inline script in `frontend/index.html` that preserves
+  `pathname + search + hash` (so old `#cart=…` share links still restore
+  the BOM correctly).
+- **MCP clients** on an old URL continue to hit `/mcp-api/mcp` on the
+  legacy host; no HTTP redirect chain involved (which would otherwise
+  break their POST requests), so no client-side reconfiguration is
+  required during the cutover.
+
+**Manual alternative**: Open `http://your-server-ip:81` in a browser, log in with the credentials from `.env`, and configure the proxy hosts manually.
 
 ### 2. Run Data Ingestion
 
@@ -92,7 +113,10 @@ All configuration is in `.env` (copied from `.env.example` by setup.sh):
 | `ALLOWED_ORIGINS` | CORS allowed origins (comma-separated) | `http://localhost:3000` |
 | `JLCPARTS_BASE` | jlcparts mirror base URL | `https://yaqwsx.github.io/jlcparts` |
 | `INGEST_CONCURRENCY` | Parallel download workers | `4` |
-| `DOMAIN` | Production domain for SSL | — |
+| `DOMAIN` | Canonical production domain for SSL | — |
+| `DOMAIN_ALIASES` | Space-separated legacy hostnames that should also serve the site | — |
+| `POSTHOG_KEY` | PostHog project API key (backend/mcp) | Built-in default |
+| `VITE_POSTHOG_KEY` | PostHog project API key (frontend build) | Built-in default |
 | `NPM_ADMIN_EMAIL` | Nginx Proxy Manager admin email | — |
 | `NPM_ADMIN_PASS` | Nginx Proxy Manager admin password | Auto-generated |
 | `LETSENCRYPT_EMAIL` | Email for Let's Encrypt certificates | — |

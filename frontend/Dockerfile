@@ -5,7 +5,15 @@ COPY package.json package-lock.json* ./
 RUN npm install
 
 COPY . .
+# Vite inlines env vars prefixed with VITE_ at build time. They must be
+# present in the BUILDER shell when `npm run build` runs — pass them as
+# ARGs from docker compose and re-export as ENV so Vite picks them up.
 ARG VITE_API_BASE=""
+ARG VITE_POSTHOG_KEY=""
+ARG VITE_POSTHOG_HOST=""
+ENV VITE_API_BASE=$VITE_API_BASE \
+    VITE_POSTHOG_KEY=$VITE_POSTHOG_KEY \
+    VITE_POSTHOG_HOST=$VITE_POSTHOG_HOST
 RUN npm run build
 
 FROM nginx:alpine

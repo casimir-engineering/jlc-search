@@ -2,13 +2,23 @@
 #
 # configure-npm.sh — Idempotent Nginx Proxy Manager setup
 #
-# Creates (or updates) a proxy host for the site domain, provisions a
-# Let's Encrypt certificate, and enables Force-SSL + HTTP/2.
+# Creates (or updates) a proxy host for the primary site domain (DOMAIN)
+# plus any legacy aliases listed in DOMAIN_ALIASES, provisions a
+# Let's Encrypt certificate per host, and enables Force-SSL + HTTP/2.
+#
+# Every configured domain forwards to localhost:8080 (the frontend nginx),
+# which is the same backend. This is the pattern used for the
+# casimir.engineering -> the-chipyard.com migration: the legacy hostname
+# keeps serving the site so that MCP clients (which POST to /mcp-api/mcp
+# and do NOT follow HTTP redirects) continue to work, while real users are
+# migrated to the canonical hostname by the client-side redirect in
+# frontend/index.html.
 #
 # Usage:
-#   make configure-npm            # sources .env automatically
+#   make configure-npm                       # sources .env automatically
 #   DOMAIN=example.com bash scripts/configure-npm.sh
 #   bash scripts/configure-npm.sh example.com
+#   DOMAIN_ALIASES="old1.com old2.com" bash scripts/configure-npm.sh
 #
 set -euo pipefail
 
@@ -32,9 +42,16 @@ if [ -z "$DOMAIN" ]; then
     exit 1
 fi
 
+# Space-separated list of legacy hostnames that should also serve the site.
+DOMAIN_ALIASES="${DOMAIN_ALIASES:-}"
+
 NPM_URL="http://localhost:81"
 NPM_EMAIL="${NPM_ADMIN_EMAIL:-admin@example.com}"
 NPM_PASS="${NPM_ADMIN_PASS:-changeme}"
+# Current NPM versions register Let's Encrypt with the authenticated user's
+# account email, not a per-cert letsencrypt_email field. LETSENCRYPT_EMAIL
+# is still honored: if set, we update the admin user's profile before
+# requesting certs so LE registrations use the intended address.
 LE_EMAIL="${LETSENCRYPT_EMAIL:-}"
 
 # The host:port that NPM should proxy to.  With network_mode: host the
@@ -43,7 +60,10 @@ FORWARD_HOST="127.0.0.1"
 FORWARD_PORT=8080
 
 echo "=== Configuring Nginx Proxy Manager ==="
-echo "Domain:       $DOMAIN"
+echo "Primary:      $DOMAIN"
+if [ -n "$DOMAIN_ALIASES" ]; then
+    echo "Aliases:      $DOMAIN_ALIASES"
+fi
 echo "Forward to:   $FORWARD_HOST:$FORWARD_PORT"
 echo "LE email:     ${LE_EMAIL:-(not set — will skip SSL)}"
 echo ""
@@ -143,18 +163,47 @@ fi
 echo "  Authenticated."
 
 # ---------------------------------------------------------------------------
-# 3. Check for existing proxy host
+# 2b. Sync LE_EMAIL onto the admin user profile. Current NPM versions take
+#     the Let's Encrypt registration email from the authenticated user's
+#     account, not from a per-cert field, so the admin user's email must
+#     be the address we want on LE registrations.
 # ---------------------------------------------------------------------------
-echo ""
-echo "Looking for existing proxy host for $DOMAIN..."
+if [ -n "$LE_EMAIL" ]; then
+    CUR_ME=$(npm_api GET /api/users/me)
+    CUR_ME_EMAIL=$(echo "$CUR_ME" | jq -r '.email // empty')
+    CUR_ME_ID=$(echo "$CUR_ME" | jq -r '.id // empty')
+    if [ -n "$CUR_ME_ID" ] && [ "$CUR_ME_EMAIL" != "$LE_EMAIL" ]; then
+        echo "  Updating admin user email to $LE_EMAIL (for Let's Encrypt registration)..."
+        CUR_ME_NAME=$(echo "$CUR_ME" | jq -r '.name // "Administrator"')
+        CUR_ME_NICK=$(echo "$CUR_ME" | jq -r '.nickname // "admin"')
+        npm_api PUT "/api/users/$CUR_ME_ID" "$(jq -n \
+            --arg email "$LE_EMAIL" \
+            --arg name "$CUR_ME_NAME" \
+            --arg nick "$CUR_ME_NICK" \
+            '{email: $email, name: $name, nickname: $nick, is_disabled: false, roles: ["admin"]}')" >/dev/null
+    fi
+fi
 
-HOSTS_JSON=$(npm_api GET /api/nginx/proxy-hosts)
+# ---------------------------------------------------------------------------
+# 3. Per-host configuration — runs once for DOMAIN and once per DOMAIN_ALIASES entry.
+# ---------------------------------------------------------------------------
+configure_host() {
+    local DOMAIN="$1"
 
-# Find existing host by domain name
-EXISTING_HOST=$(echo "$HOSTS_JSON" | jq --arg d "$DOMAIN" '
-    [.[] | select(.domain_names[]? == $d)] | first // empty
-')
-EXISTING_ID=$(echo "$EXISTING_HOST" | jq -r '.id // empty' 2>/dev/null || true)
+    echo ""
+    echo "--- Configuring host: $DOMAIN ---"
+    echo "Looking for existing proxy host for $DOMAIN..."
+
+    local HOSTS_JSON EXISTING_HOST EXISTING_ID EXISTING_CERT EXISTING_SSL EXISTING_HTTP2
+    local HOST_ID CERTS_JSON EXISTING_CERT_ID CERT_ID CERT_RESPONSE
+
+    HOSTS_JSON=$(npm_api GET /api/nginx/proxy-hosts)
+
+    # Find existing host by domain name
+    EXISTING_HOST=$(echo "$HOSTS_JSON" | jq --arg d "$DOMAIN" '
+        [.[] | select(.domain_names[]? == $d)] | first // empty
+    ')
+    EXISTING_ID=$(echo "$EXISTING_HOST" | jq -r '.id // empty' 2>/dev/null || true)
 
 # ---------------------------------------------------------------------------
 # 4. Build the proxy-host payload (without SSL initially)
@@ -203,18 +252,16 @@ if [ -n "$EXISTING_ID" ]; then
         EXISTING_HTTP2=$(echo "$EXISTING_HOST" | jq -r '.http2_support // false')
         if [ "$EXISTING_SSL" = "true" ] && [ "$EXISTING_HTTP2" = "true" ]; then
             echo "  SSL already configured and forced.  Nothing to do."
-            echo ""
-            echo "Done! https://$DOMAIN is already configured."
-            exit 0
+            echo "  https://$DOMAIN is already configured."
+            return 0
         fi
         # SSL cert exists but settings need updating
         echo "  Updating SSL settings..."
         npm_api PUT "/api/nginx/proxy-hosts/$HOST_ID" \
             "$(build_host_payload "$EXISTING_CERT" true true true)" >/dev/null
         echo "  Force-SSL and HTTP/2 enabled."
-        echo ""
-        echo "Done! https://$DOMAIN"
-        exit 0
+        echo "  Done: https://$DOMAIN"
+        return 0
     fi
 
     # No cert yet — update the host to make sure forward target is correct
@@ -226,7 +273,10 @@ else
     HOST_ID=$(npm_api POST /api/nginx/proxy-hosts \
         "$(build_host_payload 0 false false false)" \
     | jq -r '.id')
-    [ -z "$HOST_ID" ] || [ "$HOST_ID" = "null" ] && fail "Failed to create proxy host."
+    if [ -z "$HOST_ID" ] || [ "$HOST_ID" = "null" ]; then
+        echo "  ERROR: Failed to create proxy host for $DOMAIN." >&2
+        return 1
+    fi
     echo "  Proxy host created (ID: $HOST_ID)."
 fi
 
@@ -235,10 +285,10 @@ fi
 # ---------------------------------------------------------------------------
 if [ -z "$LE_EMAIL" ]; then
     echo ""
-    echo "WARNING: LETSENCRYPT_EMAIL not set — skipping SSL."
+    echo "WARNING: LETSENCRYPT_EMAIL not set — skipping SSL for $DOMAIN."
     echo "  Proxy host is reachable at http://$DOMAIN (no HTTPS yet)."
     echo "  Set LETSENCRYPT_EMAIL in .env and re-run: make configure-npm"
-    exit 0
+    return 0
 fi
 
 echo ""
@@ -257,17 +307,16 @@ else
     echo "Requesting Let's Encrypt certificate for $DOMAIN..."
     echo "  (This may take 30–60 s while ACME validates the domain.)"
 
+    # NPM cert-create schema only accepts a small set of meta keys; email
+    # and agree-to-ToS are taken from the authenticated admin user (synced
+    # in step 2b above).
     CERT_RESPONSE=$(npm_api POST /api/nginx/certificates \
-        "$(jq -n --arg domain "$DOMAIN" --arg email "$LE_EMAIL" '{
+        "$(jq -n --arg domain "$DOMAIN" '{
+            provider: "letsencrypt",
             domain_names: [$domain],
-            meta: {
-                letsencrypt_email: $email,
-                letsencrypt_agree: true,
-                dns_challenge: false
-            },
-            provider: "letsencrypt"
+            meta: { dns_challenge: false }
         }')" 2>&1) || {
-        echo "  Certificate request failed.  Response:"
+        echo "  Certificate request failed for $DOMAIN.  Response:"
         echo "  $CERT_RESPONSE"
         echo ""
         echo "  Common causes:"
@@ -276,14 +325,14 @@ else
         echo "    - Let's Encrypt rate limit reached"
         echo ""
         echo "  Proxy host was created (http://$DOMAIN works).  Fix the above and re-run: make configure-npm"
-        exit 1
+        return 1
     }
 
     CERT_ID=$(echo "$CERT_RESPONSE" | jq -r '.id // empty')
     if [ -z "$CERT_ID" ] || [ "$CERT_ID" = "null" ]; then
         echo "  Certificate request returned unexpected response:"
         echo "  $CERT_RESPONSE"
-        exit 1
+        return 1
     fi
     echo "  Certificate obtained (ID: $CERT_ID)."
 fi
@@ -295,8 +344,31 @@ echo "Enabling Force-SSL, HTTP/2, and HSTS on proxy host..."
 npm_api PUT "/api/nginx/proxy-hosts/$HOST_ID" \
     "$(build_host_payload "$CERT_ID" true true true)" >/dev/null
 
+echo "  Done: https://$DOMAIN (cert ID $CERT_ID, host ID $HOST_ID)"
+}  # end configure_host
+
+# ---------------------------------------------------------------------------
+# 8. Dispatch: configure the primary DOMAIN, then each alias.
+# ---------------------------------------------------------------------------
+configure_host "$DOMAIN"
+
+FAILED=""
+for alias_host in $DOMAIN_ALIASES; do
+    if ! configure_host "$alias_host"; then
+        FAILED="${FAILED} ${alias_host}"
+    fi
+done
+
 echo ""
 echo "=== DONE ==="
-echo "  https://$DOMAIN is now served over HTTPS with Let's Encrypt."
-echo "  Certificate ID: $CERT_ID"
-echo "  Proxy Host ID:  $HOST_ID"
+echo "  Primary: https://$DOMAIN"
+if [ -n "$DOMAIN_ALIASES" ]; then
+    echo "  Aliases: $DOMAIN_ALIASES"
+fi
+if [ -n "$FAILED" ]; then
+    echo ""
+    echo "  WARNING: some aliases failed:${FAILED}"
+    echo "  The primary domain was configured successfully. Re-run once DNS"
+    echo "  for the failed aliases points at this server."
+    exit 1
+fi

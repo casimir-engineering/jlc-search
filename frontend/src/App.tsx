@@ -236,7 +236,7 @@ export function App() {
             <line x1="10" y1="17" x2="20" y2="17" stroke="#0066cc" strokeWidth="1"/>
           </svg>
           <div className="logo-text-group">
-            <span className="logo-text">Casimir Search</span>
+            <span className="logo-text">Search the Chipyard</span>
             <span className="logo-sub">Electronic components</span>
           </div>
         </div>

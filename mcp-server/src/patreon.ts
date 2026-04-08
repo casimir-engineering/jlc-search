@@ -162,7 +162,7 @@ const PATREON_AUTH_URL = "https://www.patreon.com/oauth2/authorize";
 const PATREON_TOKEN_URL = "https://www.patreon.com/api/oauth2/token";
 const PATREON_IDENTITY_URL = "https://www.patreon.com/api/oauth2/v2/identity";
 
-const MCP_URL = "https://search.casimir.engineering/mcp-api/mcp";
+const MCP_URL = "https://search.the-chipyard.com/mcp-api/mcp";
 
 export async function handleKeyPage(c: Context): Promise<Response> {
   const clientId = process.env.PATREON_CLIENT_ID;
@@ -338,7 +338,7 @@ export async function handleKeyPage(c: Context): Promise<Response> {
 
     <div id="guide-generic" class="guide-content active">
       <p>Give this prompt to your AI:</p>
-      <pre class="config-block"><code>I have access to a JLCsearch MCP server at ${MCP_URL}
+      <pre class="config-block"><code>I have access to the Search the Chipyard MCP server at ${MCP_URL}
 with API key: ${escHtml(apiKey)} (send as Authorization: Bearer header).
 
 Available tools:
@@ -421,7 +421,7 @@ bearer_token_env_var = "JLCSEARCH_API_KEY"</code></pre>
     }
   </script>`;
 
-  return c.html(renderPage(`Casimir Search MCP`, body));
+  return c.html(renderPage(`Search the Chipyard MCP`, body));
 }
 
 function escHtml(s: string): string {
