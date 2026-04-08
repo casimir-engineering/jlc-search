@@ -14,12 +14,13 @@ import { handlePatreonWebhook, handleKeyPage } from "./patreon.ts";
 import { logUsage } from "./usage.ts";
 import { checkDailyLimit } from "./rate-limit.ts";
 import { closeDb } from "./db.ts";
+import { posthog } from "./posthog.ts";
 
 const MCP_PORT = parseInt(process.env.MCP_PORT ?? "3002", 10);
 
 // ── MCP Server ──────────────────────────────────────────────────────
 
-function createMcpServer(apiKeyId?: string): McpServer {
+function createMcpServer(apiKeyId?: string, apiKeyTier?: string): McpServer {
   const server = new McpServer({
     name: "jlc-search",
     version: "0.1.0",
@@ -61,6 +62,17 @@ function createMcpServer(apiKeyId?: string): McpServer {
         const tookMs = Date.now() - start;
         if (apiKeyId) {
           logUsage(apiKeyId, name, tookMs, resultCount, error);
+          posthog.capture({
+            distinctId: apiKeyId,
+            event: "mcp_tool_call",
+            properties: {
+              tool: name,
+              took_ms: tookMs,
+              result_count: resultCount,
+              error,
+              tier: apiKeyTier,
+            },
+          });
         }
       }
     };
@@ -133,7 +145,7 @@ app.post("/mcp", async (c) => {
       c.header("X-RateLimit-Limit", String(limit));
     }
 
-    const server = createMcpServer(apiKey.id);
+    const server = createMcpServer(apiKey.id, apiKey.tier);
     const transport = new WebStandardStreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
     });
@@ -167,7 +179,9 @@ app.delete("/mcp", (c) =>
 
 function shutdown(signal: string) {
   console.log(`\n${signal} received, shutting down...`);
-  closeDb()
+  posthog
+    .shutdown()
+    .then(() => closeDb())
     .then(() => {
       console.log("Database connections closed.");
       process.exit(0);

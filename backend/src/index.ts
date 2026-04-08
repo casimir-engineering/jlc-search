@@ -8,6 +8,7 @@ import { fpRouter } from "./routes/fp.ts";
 import { schRouter } from "./routes/sch.ts";
 import { pcbaRouter } from "./routes/pcba.ts";
 import { waitForDb, closeDb } from "./db.ts";
+import { posthog } from "./posthog.ts";
 
 const app = new Hono();
 
@@ -81,10 +82,12 @@ console.log(`Backend running on http://0.0.0.0:${server.port}`);
 
 // Graceful shutdown
 process.on("SIGINT", async () => {
+  await posthog.shutdown();
   await closeDb();
   process.exit(0);
 });
 process.on("SIGTERM", async () => {
+  await posthog.shutdown();
   await closeDb();
   process.exit(0);
 });

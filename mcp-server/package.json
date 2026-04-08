@@ -10,6 +10,7 @@
     "@modelcontextprotocol/sdk": "^1.27.0",
     "hono": "^4.6.0",
     "postgres": "^3.4.5",
+    "posthog-node": "^5.29.1",
     "zod": "^3.25.0"
   },
   "devDependencies": {
