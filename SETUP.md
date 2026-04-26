@@ -31,7 +31,7 @@ This single command:
 
 ```bash
 ./setup.sh                            # Local/dev setup (domain=localhost, no SSL)
-./setup.sh search.the-chipyard.com    # Production setup with domain
+./setup.sh search.raph.io             # Production setup with domain
 ```
 
 The script is **idempotent** — safe to run multiple times. It won't overwrite an existing `.env` or regenerate passwords that have already been customized.
@@ -56,8 +56,8 @@ existing share-BOM links still load and MCP clients configured against the
 old URL keep working), list them in `DOMAIN_ALIASES`:
 
 ```
-DOMAIN=search.the-chipyard.com
-DOMAIN_ALIASES=search.casimir.engineering jlcsearch.casimir.engineering
+DOMAIN=search.raph.io
+DOMAIN_ALIASES=search.the-chipyard.com search.casimir.engineering jlcsearch.casimir.engineering
 ```
 
 `make configure-npm` then provisions a proxy host + cert for the primary

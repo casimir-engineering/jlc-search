@@ -1,8 +1,8 @@
-# Search the Chipyard (jlc-search)
+# Raph Search (jlc-search)
 
 Fast search engine for JLCPCB/LCSC electronic components. Indexes 3.5M+ parts with full-text search, numeric range filtering, datasheet property extraction, and live stock/price updates.
 
-**Live:** [search.the-chipyard.com](https://search.the-chipyard.com)
+**Live:** [search.raph.io](https://search.raph.io)
 
 ## Features
 

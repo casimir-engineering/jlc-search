@@ -4,7 +4,7 @@
 #
 # Usage:
 #   ./setup.sh                           # local/dev setup (domain=localhost)
-#   ./setup.sh search.the-chipyard.com   # production setup with domain
+#   ./setup.sh search.raph.io            # production setup with domain
 #
 # Safe to run multiple times (idempotent).
 # =============================================================================
