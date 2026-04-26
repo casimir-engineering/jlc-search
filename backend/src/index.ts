@@ -7,6 +7,7 @@ import { imgRouter } from "./routes/img.ts";
 import { fpRouter } from "./routes/fp.ts";
 import { schRouter } from "./routes/sch.ts";
 import { pcbaRouter } from "./routes/pcba.ts";
+import { kibraryRouter } from "./routes/kibrary.ts";
 import { waitForDb, closeDb } from "./db.ts";
 import { posthog } from "./posthog.ts";
 
@@ -59,6 +60,7 @@ app.route("/api/img", imgRouter);
 app.route("/api/fp", fpRouter);
 app.route("/api/sch", schRouter);
 app.route("/api/pcba", pcbaRouter);
+app.route("/api/kibrary", kibraryRouter);
 
 app.get("/", (c) => c.json({ ok: true, service: "jlc-search" }));
 

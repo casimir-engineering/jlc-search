@@ -123,4 +123,21 @@ export async function applySchema(sql: Sql): Promise<void> {
       PRIMARY KEY (category, subcategory)
     )
   `;
+
+  // Kibrary API keys (Bearer-token auth for /api/kibrary/* routes)
+  await sql`
+    CREATE TABLE IF NOT EXISTS kibrary_api_keys (
+      id           SERIAL PRIMARY KEY,
+      key_hash     TEXT NOT NULL UNIQUE,
+      label        TEXT NOT NULL DEFAULT '',
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+      last_used_at TIMESTAMPTZ,
+      revoked_at   TIMESTAMPTZ
+    )
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_kibrary_keys_active_hash
+      ON kibrary_api_keys(key_hash)
+      WHERE revoked_at IS NULL
+  `;
 }

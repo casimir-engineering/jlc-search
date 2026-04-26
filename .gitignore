@@ -6,3 +6,7 @@ data/
 .mcp.test.json
 *.log
 *.tsbuildinfo
+
+# Internal Claude-session handoff prompts — never commit (public repo)
+CLAUDE-PROMPT-*.md
+/root/kibrary-private/
