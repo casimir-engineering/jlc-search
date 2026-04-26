@@ -129,6 +129,9 @@ Indexes: (unit, value), (lcsc)
 ### `ingest_meta` — Ingestion progress tracking
 PK: (category, subcategory), `sourcename`, `datahash`, `stockhash`, `ingested_at`
 
+### `kibrary_api_keys` — Auth keys for the Kibrary desktop-client API
+`id` (PK), `key_hash` (UNIQUE, `scrypt` digest with fixed salt `kibrary-api-key-v1`), `label`, `created_at`, `last_used_at`, `revoked_at`. Partial index `idx_kibrary_keys_active_hash ON (key_hash) WHERE revoked_at IS NULL` for fast auth lookups. Mint via `bun run scripts/issue-kibrary-key.ts --label <name>`; revoke by setting `revoked_at`.
+
 ## Search Architecture
 
 **CRITICAL PRINCIPLE: Full matches MUST rank above partial matches.** For multi-token queries like "100nF 0402 ceramic", parts matching ALL tokens must appear first. Partial matches (matching 1-2 tokens) appear later. Never use OR-only logic for the primary tier.
@@ -277,3 +280,8 @@ One-command deploy: `./setup.sh your-domain.com`
 | `NPM_ADMIN_EMAIL` | Nginx Proxy Manager admin email | — |
 | `NPM_ADMIN_PASS` | NPM admin password | Auto-generated |
 | `LETSENCRYPT_EMAIL` | Let's Encrypt certificate email | — |
+| `PUBLIC_BASE_URL` | Base URL used for absolute `photo_url` in `/api/kibrary/search` results | `https://search.raph.io` |
+
+## Kibrary API (`/api/kibrary/*`)
+
+Auth-gated mirror of `/api/search`, `/api/parts/:lcsc`, `/api/img/:lcsc` plus a new map-shaped `/parts/batch`. Used by the [Kibrary](https://github.com/jazari-akuna/kibrary-automator) desktop client. Routes: `backend/src/routes/kibrary.ts`. Auth + per-key token-bucket rate limiter: `backend/src/middleware/kibrary-auth.ts`. Key DB helpers + `hashApiKey()`: `backend/src/db/kibrary-keys.ts`. CLI: `scripts/issue-kibrary-key.ts`. Tests: `backend/tests/kibrary-integration.test.ts` (run via `cd backend && bun test`). The photo route shares `downloadImage()` and `isOnCooldown()` from `routes/img.ts` so cache and 24h cooldown markers are unified across both routes.

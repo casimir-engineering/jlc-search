@@ -31,7 +31,7 @@ function noImgPath(lcsc: string): string {
 }
 
 /** Returns true if a failed attempt was recorded within the last 24h. */
-function isOnCooldown(lcsc: string): boolean {
+export function isOnCooldown(lcsc: string): boolean {
   const p = noImgPath(lcsc);
   if (!existsSync(p)) return false;
   try {
@@ -156,7 +156,7 @@ const fetchWsrvProxy: ImageFetcher = async (_lcsc, cdnUrl) => {
 };
 
 /** Fetch image — rotates among healthy sources, tries all on failure. */
-async function downloadImage(lcsc: string): Promise<void> {
+export async function downloadImage(lcsc: string): Promise<void> {
   if (downloading.has(lcsc)) return;
   downloading.add(lcsc);
   let succeeded = false;
