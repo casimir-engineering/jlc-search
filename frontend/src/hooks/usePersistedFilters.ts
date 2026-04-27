@@ -36,7 +36,7 @@ function loadFilters(): Filters {
     const valid: Filters = {
       partTypes: Array.isArray(f.partTypes) ? f.partTypes : DEFAULT_FILTERS.partTypes,
       categories: Array.isArray(f.categories) ? f.categories : DEFAULT_FILTERS.categories,
-      stockFilter: ["none", "jlc", "lcsc", "any"].includes(f.stockFilter) ? f.stockFilter : DEFAULT_FILTERS.stockFilter,
+      stockFilter: ["none", "jlc", "lcsc", "any", "both"].includes(f.stockFilter) ? f.stockFilter : DEFAULT_FILTERS.stockFilter,
       economicOnly: typeof f.economicOnly === "boolean" ? f.economicOnly : DEFAULT_FILTERS.economicOnly,
       fuzzy: typeof f.fuzzy === "boolean" ? f.fuzzy : DEFAULT_FILTERS.fuzzy,
       sort: ["relevance", "price_asc", "price_desc", "stock_desc", "stock_asc"].includes(f.sort) ? f.sort : DEFAULT_FILTERS.sort,

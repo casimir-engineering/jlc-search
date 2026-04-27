@@ -51,10 +51,10 @@ export function register(server: McpServer): void {
             "JLCPCB part type. Basic=no extra fee, Preferred=small fee, Extended=larger fee"
           ),
         stock_filter: z
-          .enum(["none", "jlc", "lcsc", "any"])
+          .enum(["none", "jlc", "lcsc", "any", "both"])
           .default("any")
           .describe(
-            "Stock filter. any=in stock somewhere, jlc=JLCPCB only, lcsc=LCSC only, none=include out of stock"
+            "Stock filter. any=in stock somewhere, jlc=JLCPCB only, lcsc=LCSC only, both=in stock at BOTH JLCPCB and LCSC, none=include out of stock"
           ),
         category: z
           .array(z.string())
