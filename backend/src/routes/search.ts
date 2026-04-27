@@ -11,8 +11,8 @@ searchRouter.get("/", async (c) => {
   const q = (c.req.query("q") ?? "").slice(0, 500);
   const partType = (c.req.queries("partType") ?? []).slice(0, 10);
   const stockFilterRaw = c.req.query("stockFilter") ?? "none";
-  const stockFilter = ["none", "jlc", "lcsc", "any"].includes(stockFilterRaw)
-    ? stockFilterRaw as "none" | "jlc" | "lcsc" | "any"
+  const stockFilter = ["none", "jlc", "lcsc", "any", "both"].includes(stockFilterRaw)
+    ? stockFilterRaw as "none" | "jlc" | "lcsc" | "any" | "both"
     : "none" as const;
   const economic = c.req.query("economic") === "true";
   const fuzzy = c.req.query("fuzzy") === "true";

@@ -152,6 +152,7 @@ export async function search(params: SearchParams): Promise<{ results: PartSumma
       case "lcsc": return sql`AND p.stock > 0`;
       case "jlc": return sql`AND p.jlc_stock > 0`;
       case "any": return sql`AND (p.stock > 0 OR p.jlc_stock > 0)`;
+      case "both": return sql`AND p.stock > 0 AND p.jlc_stock > 0`;
       default: return sql``;
     }
   })();

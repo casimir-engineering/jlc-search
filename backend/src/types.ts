@@ -43,7 +43,7 @@ export interface SearchParams {
   q: string;
   partTypes: string[];
   categories: string[];
-  stockFilter: "none" | "jlc" | "lcsc" | "any";
+  stockFilter: "none" | "jlc" | "lcsc" | "any" | "both";
   economic?: boolean;
   fuzzy: boolean;
   limit: number;

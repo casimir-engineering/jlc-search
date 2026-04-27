@@ -34,7 +34,7 @@ export interface PriceTier {
 
 export type SortOption = "relevance" | "price_asc" | "price_desc" | "stock_desc" | "stock_asc";
 
-export type StockFilter = "none" | "jlc" | "lcsc" | "any";
+export type StockFilter = "none" | "jlc" | "lcsc" | "any" | "both";
 
 export interface Filters {
   partTypes: string[];
