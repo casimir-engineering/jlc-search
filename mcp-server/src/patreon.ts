@@ -333,51 +333,32 @@ export async function handleKeyPage(c: Context): Promise<Response> {
   </div>
 
   <div class="setup-section">
-    <label class="section-label" for="guide-select">Setup Guide</label>
-    <select id="guide-select" class="guide-dropdown" onchange="showGuide(this.value)">
-      <option value="generic" selected>Generic / Other AI</option>
-      <option value="claude-desktop">Claude Desktop</option>
-      <option value="claude-code">Claude Code</option>
-      <option value="codex-cli">Codex CLI</option>
-    </select>
+    <label class="section-label">Setup Guide</label>
+    <div class="guide-tabs" role="tablist">
+      <button class="guide-tab active" data-guide="generic" onclick="showGuide('generic')">Generic / Any AI</button>
+      <button class="guide-tab" data-guide="claude-desktop" onclick="showGuide('claude-desktop')">Claude Desktop</button>
+      <button class="guide-tab" data-guide="claude-code" onclick="showGuide('claude-code')">Claude Code</button>
+      <button class="guide-tab" data-guide="codex-cli" onclick="showGuide('codex-cli')">Codex CLI</button>
+    </div>
 
     <div id="guide-generic" class="guide-content active">
       <p>Give this prompt to your AI:</p>
-      <pre class="config-block"><code>I have access to the Raph Search MCP server at ${MCP_URL}
-with API key: ${escHtml(apiKey)} (send as Authorization: Bearer header).
+      <pre class="config-block"><code>I have access to the Raph Search MCP server at ${MCP_URL}.
+Authenticate with Authorization: Bearer ${escHtml(apiKey)}.
 
 Available tools:
 - search_parts: Search 3.5M+ electronic components with filters
-- get_part: Get full details for a part by LCSC code
+- get_part: Full details for a part by LCSC code
 - list_categories: Browse component categories
 - compare_parts: Compare up to 10 parts side by side
-- create_bom: Build a BOM with quantities, get pricing summary + shareable link
+- create_bom: Build a BOM with quantities; returns pricing summary + shareable link
 
-Configure the MCP server and use it to help me find electronic components and build BOMs.</code></pre>
-    </div>
-
-    <div id="guide-claude-desktop" class="guide-content">
-      <p>Add to your Claude Desktop config file:</p>
-      <ul class="path-list">
-        <li><b>macOS</b>: <code>~/Library/Application Support/Claude/claude_desktop_config.json</code></li>
-        <li><b>Windows</b>: <code>%APPDATA%\\Claude\\claude_desktop_config.json</code></li>
-        <li><b>Linux</b>: <code>~/.config/Claude/claude_desktop_config.json</code></li>
-      </ul>
-      <pre class="config-block"><code>{
-  "mcpServers": {
-    "jlc-search": {
-      "type": "http",
-      "url": "${MCP_URL}",
-      "headers": {
-        "Authorization": "Bearer ${escHtml(apiKey)}"
-      }
-    }
-  }
-}</code></pre>
+Prefer search_parts for queries, get_part for a specific LCSC ID, create_bom when assembling a parts list.
+Don't echo the bearer key back to me.</code></pre>
     </div>
 
     <div id="guide-claude-code" class="guide-content">
-      <p>Add to <code>.mcp.json</code> in your project root (shared) or to <code>~/.claude.json</code> (personal, all projects):</p>
+      <p>Add to <code>.mcp.json</code> in your project root (shared) or to <code>~/.claude.json</code> (user-scope, all projects):</p>
       <pre class="config-block"><code>{
   "mcpServers": {
     "jlc-search": {
@@ -391,6 +372,33 @@ Configure the MCP server and use it to help me find electronic components and bu
 }</code></pre>
       <p>Or run:</p>
       <pre class="config-block"><code>claude mcp add --transport http jlc-search ${MCP_URL} --header "Authorization: Bearer ${escHtml(apiKey)}"</code></pre>
+      <p class="hint-text">Verify with <code>claude mcp list</code>.</p>
+    </div>
+
+    <div id="guide-claude-desktop" class="guide-content">
+      <p>Add to your Claude Desktop config file:</p>
+      <ul class="path-list">
+        <li><b>macOS</b>: <code>~/Library/Application Support/Claude/claude_desktop_config.json</code></li>
+        <li><b>Windows</b>: <code>%APPDATA%\\Claude\\claude_desktop_config.json</code></li>
+        <li><b>Linux</b>: <code>~/.config/Claude/claude_desktop_config.json</code></li>
+      </ul>
+      <pre class="config-block"><code>{
+  "mcpServers": {
+    "jlc-search": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "${MCP_URL}",
+        "--header",
+        "Authorization:\${AUTH_TOKEN}"
+      ],
+      "env": {
+        "AUTH_TOKEN": "Bearer ${escHtml(apiKey)}"
+      }
+    }
+  }
+}</code></pre>
+      <p class="hint-text">Requires Node.js (the <code>npx mcp-remote</code> bridge). Quit and reopen Claude Desktop after editing.</p>
     </div>
 
     <div id="guide-codex-cli" class="guide-content">
@@ -400,9 +408,7 @@ Configure the MCP server and use it to help me find electronic components and bu
       <pre class="config-block"><code>[mcp_servers.jlc-search]
 url = "${MCP_URL}"
 bearer_token_env_var = "JLCSEARCH_API_KEY"</code></pre>
-      <p>Or add via CLI:</p>
-      <pre class="config-block"><code>codex mcp add --transport http jlc-search ${MCP_URL}</code></pre>
-      <p class="hint-text">Then manually add <code>bearer_token_env_var = "JLCSEARCH_API_KEY"</code> to the <code>[mcp_servers.jlc-search]</code> section in your config.toml.</p>
+      <p class="hint-text">Verify in the Codex REPL by running <code>/mcp</code>.</p>
     </div>
   </div>
 
@@ -418,11 +424,13 @@ bearer_token_env_var = "JLCSEARCH_API_KEY"</code></pre>
 
     function showGuide(value) {
       var guides = document.querySelectorAll('.guide-content');
-      for (var i = 0; i < guides.length; i++) {
-        guides[i].classList.remove('active');
-      }
+      for (var i = 0; i < guides.length; i++) guides[i].classList.remove('active');
+      var tabs = document.querySelectorAll('.guide-tab');
+      for (var j = 0; j < tabs.length; j++) tabs[j].classList.remove('active');
       var el = document.getElementById('guide-' + value);
       if (el) el.classList.add('active');
+      var tab = document.querySelector('.guide-tab[data-guide="' + value + '"]');
+      if (tab) tab.classList.add('active');
     }
   </script>`;
 
@@ -560,24 +568,27 @@ function renderPage(title: string, body: string): string {
 
     /* Setup guide */
     .setup-section { margin-bottom: 28px; }
-    .guide-dropdown {
-      display: block;
-      width: 100%;
-      padding: 10px 14px;
-      font-size: 0.92rem;
-      background: #fff;
-      color: #1a1a1a;
-      border: 1.5px solid #d0d0d0;
-      border-radius: 8px;
-      appearance: none;
-      -webkit-appearance: none;
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%230066cc' d='M1 1l5 5 5-5'/%3E%3C/svg%3E");
-      background-repeat: no-repeat;
-      background-position: right 14px center;
-      cursor: pointer;
-      margin-bottom: 16px;
+    .guide-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin: 0 0 16px 0;
+      padding: 0;
     }
-    .guide-dropdown:focus { outline: 2px solid #0066cc; outline-offset: 1px; }
+    .guide-tab {
+      background: #fff;
+      border: 1px solid #e0e0e0;
+      border-radius: 6px;
+      padding: 6px 12px;
+      font: inherit;
+      font-size: 0.85rem;
+      color: #444;
+      cursor: pointer;
+      transition: background 0.12s, border-color 0.12s, color 0.12s;
+    }
+    .guide-tab:hover { border-color: #b0b0b0; color: #1a1a1a; }
+    .guide-tab.active { background: #0066cc; border-color: #0066cc; color: #fff; }
+    .guide-tab:focus-visible { outline: 2px solid #0066cc; outline-offset: 1px; }
 
     .guide-content { display: none; }
     .guide-content.active { display: block; }
