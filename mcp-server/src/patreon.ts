@@ -342,9 +342,30 @@ export async function handleKeyPage(c: Context): Promise<Response> {
     </div>
 
     <div id="guide-generic" class="guide-content active">
-      <p>Give this prompt to your AI:</p>
-      <pre class="config-block"><code>I have access to the Raph Search MCP server at ${MCP_URL}.
-Authenticate with Authorization: Bearer ${escHtml(apiKey)}.
+      <p>Paste this prompt to your AI to have it install and use the MCP server:</p>
+      <pre class="config-block"><code>Please install/configure the Raph Search MCP server in your AI host, then use it.
+
+Server URL: ${MCP_URL}
+Authentication: Authorization: Bearer ${escHtml(apiKey)}
+Transport: HTTP (Streamable HTTP)
+
+Pick the config matching your host:
+
+Claude Code (.mcp.json in project root, or ~/.claude.json user-scope):
+{ "mcpServers": { "jlc-search": { "type": "http", "url": "${MCP_URL}", "headers": { "Authorization": "Bearer ${escHtml(apiKey)}" } } } }
+
+Cursor (.cursor/mcp.json):
+{ "mcpServers": { "jlc-search": { "url": "${MCP_URL}", "headers": { "Authorization": "Bearer ${escHtml(apiKey)}" } } } }
+
+Codex CLI (~/.codex/config.toml — also export JLCSEARCH_API_KEY="${escHtml(apiKey)}" in your shell):
+[mcp_servers.jlc-search]
+url = "${MCP_URL}"
+bearer_token_env_var = "JLCSEARCH_API_KEY"
+
+Claude Desktop (claude_desktop_config.json — needs Node.js for the npx mcp-remote bridge):
+{ "mcpServers": { "jlc-search": { "command": "npx", "args": ["mcp-remote", "${MCP_URL}", "--header", "Authorization:\${AUTH_TOKEN}"], "env": { "AUTH_TOKEN": "Bearer ${escHtml(apiKey)}" } } } }
+
+After installing, restart your AI host so the new server is picked up.
 
 Available tools:
 - search_parts: Search 3.5M+ electronic components with filters
@@ -353,8 +374,7 @@ Available tools:
 - compare_parts: Compare up to 10 parts side by side
 - create_bom: Build a BOM with quantities; returns pricing summary + shareable link
 
-Prefer search_parts for queries, get_part for a specific LCSC ID, create_bom when assembling a parts list.
-Don't echo the bearer key back to me.</code></pre>
+Then use it to help me find electronic components and build BOMs. Don't echo the bearer key back.</code></pre>
     </div>
 
     <div id="guide-claude-code" class="guide-content">
