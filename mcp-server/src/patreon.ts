@@ -175,10 +175,15 @@ export async function handleKeyPage(c: Context): Promise<Response> {
   const url = new URL(c.req.url);
   const code = url.searchParams.get("code");
 
-  // Build the public-facing redirect URI (respects X-Forwarded-Proto from proxy)
-  const proto = c.req.header("X-Forwarded-Proto") ?? url.protocol.replace(":", "");
-  const host = c.req.header("X-Forwarded-Host") ?? c.req.header("Host") ?? url.host;
-  const publicBase = `${proto}://${host}`;
+  // Build the public-facing redirect URI. Prefer PUBLIC_BASE_URL (deterministic,
+  // immune to misconfigured proxy headers); fall back to X-Forwarded-Proto/Host
+  // for environments where it isn't set.
+  let publicBase = process.env.PUBLIC_BASE_URL?.replace(/\/$/, "");
+  if (!publicBase) {
+    const proto = c.req.header("X-Forwarded-Proto") ?? url.protocol.replace(":", "");
+    const host = c.req.header("X-Forwarded-Host") ?? c.req.header("Host") ?? url.host;
+    publicBase = `${proto}://${host}`;
+  }
   const redirectUri = `${publicBase}/mcp-api/key`;
 
   // No code — redirect to Patreon OAuth
